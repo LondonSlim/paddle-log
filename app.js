@@ -166,6 +166,7 @@ async function flush() {
         if (q.kind === 'add') await api('add', { paddle: q.paddle });
         else if (q.kind === 'update') await api('update', { row: q.row, expect: q.expect, paddle: q.paddle });
         else if (q.kind === 'place') await api('place', { name: q.name, fields: q.fields });
+        else if (q.kind === 'candidate') await api('candidate', { id: q.id, status: q.status });
         S.queue.shift(); sent++; saveQueue();
       } catch (e) {
         if (e.server) { q.error = e.message; saveQueue(); toast('Not saved: ' + e.message); }
@@ -173,7 +174,7 @@ async function flush() {
       }
     }
   } finally { S.syncing = false; }
-  if (sent) { toast(sent === 1 ? 'Sent to your log' : sent + ' paddles sent to your log'); await refresh(true); }
+  if (sent) { toast(sent === 1 ? 'Sent to your log' : sent + ' changes sent to your log'); await refresh(true); }
 }
 
 function enqueue(item) {
@@ -489,12 +490,84 @@ function screenTrip(id) {
 function screenFinish() {
   const list = toFinish(entries());
   const recent = list.filter(e => e._d && (Date.now() - e._d) < 400 * 864e5), older = list.filter(e => !recent.includes(e));
+  const toReview = candidates().filter(c => c.status === 'To review' || c.status === 'Not sure').length;
   return topbar('To finish', '') + `<div class="wrap">${syncBanner()}
+    ${toReview ? `<a class="card row" href="#review" style="text-decoration:none;color:inherit">
+      <div class="grow"><div class="t">Old trips to check</div><div class="s">Found in your calendar and photos</div></div>
+      <span class="badge orange">${toReview}</span>${ICON.chev}</a>` : ''}
     <p class="muted">Paddles that still need notes. Tap one to finish it.</p>
     <ul class="list">${tripRows(recent)}</ul>
     ${older.length ? `<details class="more"><summary>Older entries without notes (${older.length})</summary><ul class="list">${tripRows(older)}</ul></details>` : ''}
     ${!list.length ? '<div class="empty">All done</div>' : ''}</div>`;
 }
+
+/* ---------- old trips to check (Candidates tab) ---------- */
+
+function candidates() {
+  // Candidates from the sheet, with any choices made on the phone but not yet sent
+  const base = (S.data && S.data.candidates) || [];
+  const mine = {};
+  S.queue.filter(q => q.kind === 'candidate').forEach(q => { mine[q.id] = q.status; });
+  return base.map(c => Object.assign({}, c, mine[c.id] ? { status: mine[c.id] } : {}, { _d: parseDate(c.date) }));
+}
+const findCand = id => candidates().find(c => c.id === id);
+let REVIEW = { show: 'To review', kind: 'All' };
+
+function screenReview() {
+  const all = candidates();
+  const count = s => all.filter(c => c.status === s).length;
+  const seg = (k, vals) => `<div class="seg">${vals.map(([v, l]) => `<button class="${REVIEW[k] === v ? 'on' : ''}" onclick="reviewFilter('${k}','${v}')">${l}</button>`).join('')}</div>`;
+  return topbar('Old trips to check', 'finish') + `<div class="wrap">${syncBanner()}
+    <p class="muted">Days your calendar or photos suggest you paddled but aren't in the log. Calendar entries marked tbc were often placeholders.</p>
+    ${seg('show', [['To review', 'To check (' + count('To review') + ')'], ['Not sure', 'Not sure (' + count('Not sure') + ')'], ['Done', 'Done']])}
+    ${seg('kind', [['All', 'All'], ['Trip', 'Trips'], ['Session', 'Club sessions']])}
+    <ul class="list" id="candList">${candRows()}</ul></div>`;
+}
+function candRows() {
+  const list = candidates().filter(c =>
+    (REVIEW.show === 'Done' ? (c.status === 'Added' || c.status === "Didn't paddle") : c.status === REVIEW.show) &&
+    (REVIEW.kind === 'All' || c.kind === REVIEW.kind));
+  if (REVIEW.show === 'Done') list.reverse();
+  return list.map(c => `<li><a class="row" href="#cand/${enc(c.id)}">
+      <div class="datebox"><b>${c._d ? c._d.getDate() : '?'}</b><span>${c._d ? MONTHS[c._d.getMonth()] + ' ' + String(c._d.getFullYear()).slice(2) : ''}</span></div>
+      <div class="grow"><div class="t">${esc(c.cal || String(c.folder).replace(/ \(.*$/, '') || 'Photos')}</div>
+      <div class="s">${esc([c.river, c.folder && c.cal ? 'photos' : '', /tbc/i.test(c.evidence) ? 'tbc' : ''].filter(Boolean).join(' · ') || c.evidence)}</div></div>
+      ${c.status === 'Added' ? '<span class="badge">Added</span>' : c.status === "Didn't paddle" ? '<span class="badge grey">No</span>' : ''}${ICON.chev}</a></li>`).join('')
+    || '<div class="empty">Nothing here</div>';
+}
+window.reviewFilter = function (k, v) { REVIEW[k] = v; render(); };
+
+function screenCand(id) {
+  const c = findCand(id);
+  if (!c) return topbar('Old trip', 'review') + '<div class="wrap empty">Not found – try refreshing.</div>';
+  const row = (l, v) => v ? `<dt>${l}</dt><dd>${esc(v)}</dd>` : '';
+  return topbar(fmtDate(c._d), 'review') + `<div class="wrap">
+    <div class="card"><h3>${esc(c.cal || String(c.folder).replace(/ \(.*$/, '') || 'Photos')}</h3>
+      <div class="meta"><span class="badge grey">${esc(c.kind)}</span><span class="badge ${/tbc/i.test(c.evidence) ? 'warn' : ''}">${esc(c.evidence)}</span>
+        ${c.status !== 'To review' ? `<span class="badge orange">${esc(c.status)}</span>` : ''}</div>
+      <dl class="kv" style="margin-top:12px">
+        ${row('Calendar', c.cal)}${row('River (guess)', c.river)}${row('Photos', c.folder)}${row('Photo tags', c.tags)}
+        ${c.gps ? `<dt>Photo spot</dt><dd><a href="https://www.google.com/maps?q=${enc(c.gps.replace(/\s/g, ''))}" target="_blank" rel="noopener">${esc(c.gps)}</a></dd>` : ''}
+        ${row('Logged nearby', c.near)}${row('Notes', c.notes)}
+      </dl></div>
+    <div class="btnrow"><a class="btn block" href="#addc/${enc(c.id)}">${ICON.edit} I paddled – add to log</a></div>
+    <div class="btnrow"><button class="btn ghost" style="flex:1" onclick="setCand('${esc(c.id)}',&quot;Didn't paddle&quot;)">Didn't paddle</button>
+      <button class="btn ghost" style="flex:1" onclick="setCand('${esc(c.id)}','Not sure')">Not sure</button>
+      ${c.status !== 'To review' ? `<button class="btn ghost" style="flex:1" onclick="setCand('${esc(c.id)}','To review')">Undo</button>` : ''}</div>
+  </div>`;
+}
+function queueCand(id, status) {
+  S.queue = S.queue.filter(q => !(q.kind === 'candidate' && q.id === id));
+  enqueue({ kind: 'candidate', id, status });
+}
+window.setCand = function (id, status) {
+  // move on to the next one still to check
+  const list = candidates().filter(c => c.status === REVIEW.show && (REVIEW.kind === 'All' || c.kind === REVIEW.kind));
+  const i = list.findIndex(c => c.id === id);
+  queueCand(id, status);
+  const next = list[i + 1];
+  if (status !== 'To review' && next) go('cand/' + enc(next.id)); else go('review');
+};
 
 /* ---------- add / edit form ---------- */
 
@@ -530,17 +603,19 @@ function placeField(which, label, value) {
     </div>`;
 }
 
-function screenForm(id) {
+function screenForm(id, candId) {
   const editing = id != null;
   let e = {};
   if (editing) {
     e = findEntry(id);
     if (!e) return topbar('Edit', 'home') + '<div class="wrap empty">Not found – try refreshing.</div>';
   }
-  const draft = !editing ? store.get(LS.draft, null) : null;
+  const cand = candId ? findCand(candId) : null;
+  const draft = !editing && !cand ? store.get(LS.draft, null) : null;
   const v = Object.assign({ date: isoDate(new Date()), craft: 'Canoe' }, draft || {},
-    editing ? Object.assign({}, e, { date: e._d ? isoDate(e._d) : '' }) : {});
-  FORM.id = id; FORM.river = v.river || ''; FORM.np = { in: {}, out: {} };
+    editing ? Object.assign({}, e, { date: e._d ? isoDate(e._d) : '' }) : {},
+    cand ? { date: cand._d ? isoDate(cand._d) : '', river: String(cand.river || '').split(' / ')[0] } : {});
+  FORM.id = id; FORM.cand = cand ? cand.id : null; FORM.river = v.river || ''; FORM.np = { in: {}, out: {} };
   FORM.paddlers = splitNames(v.paddlers);
   const ents = entries();
   const rivers = Array.from(new Set(ents.map(x => x.river).filter(Boolean))).sort();
@@ -559,8 +634,9 @@ function screenForm(id) {
       ${ta('notes', 'Notes', 'How it went, lines, swims, lessons…')}
       ${ta('putInNotes', 'Put-in notes for this trip', '')}
       ${ta('takeOutNotes', 'Take-out notes for this trip', '')}`;
-  return topbar(editing ? 'Edit paddle' : 'Log a paddle', editing ? 'trip/' + id : 'home') + `<div class="wrap form" id="paddleForm">
+  return topbar(editing ? 'Edit paddle' : 'Log a paddle', editing ? 'trip/' + id : (cand ? 'cand/' + cand.id : 'home')) + `<div class="wrap form" id="paddleForm">
     ${!editing && draft ? '<div class="banner"><div class="grow">Carrying on from an unsaved draft.</div><button class="btn small ghost" onclick="clearDraft()">Start fresh</button></div>' : ''}
+    ${cand ? `<div class="banner green"><div class="grow">From ${esc(cand.cal || cand.folder || 'your photos')}. Check the date and river.</div></div>` : ''}
     <div class="grid2"><div>${f('date', 'Date', '', 'date')}</div>
       <div><label>Craft</label><input id="f_craft" list="dl_crafts" value="${esc(v.craft || '')}"></div></div>
     <label>River / water</label><input id="f_river" list="dl_rivers" value="${esc(v.river || '')}" onchange="riverChanged()" autocomplete="off">
@@ -583,7 +659,7 @@ function screenForm(id) {
 }
 function afterForm() {
   sectionsList(); drawPaddlers();
-  if (!FORM.id) { const fm = $('#paddleForm'); fm && fm.addEventListener('input', saveDraft); fm && fm.addEventListener('change', saveDraft); }
+  if (!FORM.id && !FORM.cand) { const fm = $('#paddleForm'); fm && fm.addEventListener('input', saveDraft); fm && fm.addEventListener('change', saveDraft); }
 }
 function sectionsList() {
   const r = $('#f_river').value.trim();
@@ -712,7 +788,7 @@ window.submitForm = function () {
   } else {
     const item = { kind: 'add', paddle: p };
     enqueue(item);
-    store.del(LS.draft);
+    if (FORM.cand) queueCand(FORM.cand, 'Added'); else store.del(LS.draft);
     go('trip/p:' + item.uid);
   }
 };
@@ -791,15 +867,16 @@ function render() {
     home: [screenHome, afterHome], rivers: [screenRivers, afterRivers], river: [screenRiver, afterRiver],
     trips: [screenTrips], trip: [screenTrip], buddies: [screenBuddies], buddy: [screenBuddy],
     add: [() => screenForm(null), afterForm], edit: [screenForm, afterForm], finish: [screenFinish],
-    place: [screenPlace, afterPlace], setup: [screenSetup]
+    place: [screenPlace, afterPlace], setup: [screenSetup],
+    review: [screenReview], cand: [screenCand], addc: [a => screenForm(null, a), afterForm]
   };
   const [scr, after] = screens[route] || screens.home;
   app.innerHTML = scr(route === 'add' ? undefined : arg);
   if (after) after(arg);
-  const tab = { home: 'home', trips: 'home', buddies: 'home', buddy: 'home', rivers: 'rivers', river: 'rivers', place: 'rivers', add: 'add', edit: 'finish', finish: 'finish', trip: 'home' }[route] || 'home';
+  const tab = { home: 'home', trips: 'home', buddies: 'home', buddy: 'home', rivers: 'rivers', river: 'rivers', place: 'rivers', add: 'add', edit: 'finish', finish: 'finish', trip: 'home', review: 'finish', cand: 'finish', addc: 'finish' }[route] || 'home';
   $$('#nav a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
   updateDot();
-  if (route !== 'add' && route !== 'edit') window.scrollTo(0, 0);
+  if (route !== 'add' && route !== 'edit' && route !== 'addc') window.scrollTo(0, 0);
 }
 
 // One-tap setup link:  …/#setup=<web app url>&key=<app key>
