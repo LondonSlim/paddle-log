@@ -146,7 +146,7 @@ async function refresh(quiet) {
     S.data = d; store.set(LS.data, d); S.lastError = '';
     if (!quiet) toast('Up to date');
     // don't redraw a form you're typing into
-    if (/^#(add|edit|place)\b/.test(location.hash)) updateDot(); else render();
+    if (/^#(addc?|edit|place)\b/.test(location.hash)) updateDot(); else render();
   } catch (e) {
     S.lastError = e.server ? e.message : '';
     if (!quiet) toast(e.server ? e.message : 'No signal – showing saved copy');
@@ -210,9 +210,16 @@ function syncBanner() {
   if (!S.queue.length) return '';
   const err = S.queue.find(q => q.error);
   return `<div class="banner ${err ? '' : 'green'}"><div class="grow">${S.queue.length} waiting to send${err ? ' – ' + esc(err.error) : ''}</div>
-    <button class="btn small" onclick="flush()">Send now</button></div>`;
+    <button class="btn small" onclick="flush()">Send now</button>
+    ${err ? '<button class="btn small ghost" onclick="dropStuck()">Discard</button>' : ''}</div>`;
 }
 window.flush = flush;
+window.dropStuck = function () {
+  // the sheet refused this change; drop it so the rest can send
+  const i = S.queue.findIndex(q => q.error);
+  if (i < 0) return;
+  S.queue.splice(i, 1); saveQueue(); toast('Change discarded'); render(); flush();
+};
 
 /* ---------- maps ---------- */
 
@@ -898,5 +905,14 @@ window.addEventListener('hashchange', () => { setupFromLink(); render(); });
   const had = !!S.data;
   render();
   if (S.cfg) { if (had) refresh(true); flush(); }
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+    }).catch(() => {});
+    // a new version has taken over: reload, but never in the middle of a form
+    let fresh = false;
+    const reloadSoon = () => { if (/^#(addc?|edit|place)\b/.test(location.hash)) { fresh = true; } else location.reload(); };
+    if (navigator.serviceWorker.controller) navigator.serviceWorker.addEventListener('controllerchange', reloadSoon);
+    window.addEventListener('hashchange', () => { if (fresh && !/^#(addc?|edit|place)\b/.test(location.hash)) location.reload(); });
+  }
 })();
