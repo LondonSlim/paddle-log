@@ -272,6 +272,8 @@ function screenSetup(msg) {
     ${msg ? `<div class="banner">${esc(msg)}</div>` : ''}
     <p class="muted">Connect Water Log to your Canoe Log Book. Paste the web app address and the App key
       from the Settings tab of the sheet. You only do this once on each phone.</p>
+    <div class="btnrow"><button class="btn block" onclick="pasteSetup()">Paste setup link</button></div>
+    <p class="muted">Copy the setup link from your messages first, then tap the button. Or fill in the two boxes below.</p>
     <label>Web app address</label><input id="su_url" value="${esc(c.url || '')}" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="url">
     <label>App key</label><input id="su_key" value="${esc(c.key || '')}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
     <div class="btnrow"><button class="btn block" onclick="saveSetup()">Connect</button></div>
@@ -284,6 +286,13 @@ function screenSetup(msg) {
         ${S.queue.length ? '<button class="btn small" onclick="flush()">Send now</button>' : ''}</div></div>` : ''}
   </div>`;
 }
+window.pasteSetup = async function () {
+  let text = '';
+  try { text = await navigator.clipboard.readText(); } catch (e) { toast('Couldn\'t read the clipboard – paste into the address box instead'); return; }
+  if (!/#setup=/.test(text || '')) { toast('That isn\'t the setup link – copy it again and retry'); return; }
+  $('#su_url').value = text.trim(); $('#su_key').value = '';
+  saveSetup();
+};
 window.saveSetup = async function () {
   let raw = $('#su_url').value.replace(/\s+/g, ''), key = $('#su_key').value.replace(/\s+/g, '');
   // a whole setup link pasted into the box also works
@@ -932,5 +941,15 @@ window.addEventListener('hashchange', () => { setupFromLink(); render(); });
   const had = !!S.data;
   render();
   if (S.cfg) { if (had) refresh(true); flush(); }
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    // when a new version of the app arrives, switch to it straight away
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController && !reloaded && !/^#(add|edit|place)\b/.test(location.hash)) { reloaded = true; location.reload(); }
+    });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+    }).catch(() => {});
+  }
 })();

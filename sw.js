@@ -1,6 +1,6 @@
 /* Water Log service worker: keeps the app itself on the phone so it opens with no signal.
  * Bump VERSION whenever app files change so phones pick up the new version. */
-const VERSION = 'wl-v4';
+const VERSION = 'wl-v5';
 const SHELL = [
   './', 'index.html', 'app.css', 'app.js', 'osgrid.js', 'home1.jpg', 'home2.jpg', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
@@ -14,7 +14,7 @@ const TILES = 'wl-tiles';
 const MAX_TILES = 1500;
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -46,12 +46,20 @@ self.addEventListener('fetch', e => {
 
   if (url.origin !== self.location.origin) return;
 
-  // App files: from the phone first, refreshed in the background
+  // App files: the latest from the web when there's signal (so updates arrive straight away),
+  // the copy saved on the phone when there isn't
   e.respondWith(caches.open(VERSION).then(async c => {
-    const hit = await c.match(req, { ignoreSearch: true }) ||
-      (req.mode === 'navigate' ? await c.match('index.html') : null);
-    const net = fetch(req).then(res => { if (res.ok) c.put(req, res.clone()); return res; }).catch(() => hit);
-    return hit || net;
+    const saved = () => c.match(req, { ignoreSearch: true }).then(hit => hit || (req.mode === 'navigate' ? c.match('index.html') : null));
+    try {
+      const res = await Promise.race([
+        fetch(req, { cache: 'no-cache' }),
+        new Promise((_, no) => setTimeout(() => no(new Error('slow')), 4000))
+      ]);
+      if (res.ok) c.put(req, res.clone());
+      return res;
+    } catch (err) {
+      return (await saved()) || Response.error();
+    }
   }));
 });
 
