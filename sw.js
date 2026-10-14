@@ -1,8 +1,8 @@
 /* Water Log service worker: keeps the app itself on the phone so it opens with no signal.
  * Bump VERSION whenever app files change so phones pick up the new version. */
-const VERSION = 'wl-v3';
+const VERSION = 'wl-v4';
 const SHELL = [
-  './', 'index.html', 'app.css', 'app.js', 'osgrid.js', 'hero.jpg', 'manifest.webmanifest',
+  './', 'index.html', 'app.css', 'app.js', 'osgrid.js', 'home1.jpg', 'home2.jpg', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
   'vendor/leaflet.js', 'vendor/leaflet.css',
   'vendor/fonts/bricolage-grotesque-latin-600-normal.woff2',
@@ -14,7 +14,7 @@ const TILES = 'wl-tiles';
 const MAX_TILES = 1500;
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {

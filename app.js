@@ -34,6 +34,7 @@ const ICON = {
   pin: '<svg viewBox="0 0 24 24"><path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>',
   gps: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>',
   wave: '<svg viewBox="0 0 24 24"><path d="M2 12c3-3 5 3 8 0s5-3 8 0 4 1 4 1"/><path d="M2 17c3-3 5 3 8 0s5-3 8 0 4 1 4 1"/></svg>',
+  share: '<svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>',
   refresh: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>'
 };
 
@@ -145,12 +146,13 @@ async function refresh(quiet) {
     const d = await api('data');
     S.data = d; store.set(LS.data, d); S.lastError = '';
     if (!quiet) toast('Up to date');
-    // don't redraw a form you're typing into
-    if (/^#(addc?|edit|place)\b/.test(location.hash)) updateDot(); else render();
   } catch (e) {
     S.lastError = e.server ? e.message : '';
     if (!quiet) toast(e.server ? e.message : 'No signal – showing saved copy');
+    return;
   }
+  // don't redraw a form you're typing into
+  if (/^#(add|edit|place)\b/.test(location.hash)) updateDot(); else render();
 }
 
 function saveQueue() { store.set(LS.queue, S.queue); updateDot(); }
@@ -166,7 +168,6 @@ async function flush() {
         if (q.kind === 'add') await api('add', { paddle: q.paddle });
         else if (q.kind === 'update') await api('update', { row: q.row, expect: q.expect, paddle: q.paddle });
         else if (q.kind === 'place') await api('place', { name: q.name, fields: q.fields });
-        else if (q.kind === 'candidate') await api('candidate', { id: q.id, status: q.status });
         S.queue.shift(); sent++; saveQueue();
       } catch (e) {
         if (e.server) { q.error = e.message; saveQueue(); toast('Not saved: ' + e.message); }
@@ -174,7 +175,7 @@ async function flush() {
       }
     }
   } finally { S.syncing = false; }
-  if (sent) { toast(sent === 1 ? 'Sent to your log' : sent + ' changes sent to your log'); await refresh(true); }
+  if (sent) { toast(sent === 1 ? 'Sent to your log' : sent + ' paddles sent to your log'); await refresh(true); }
 }
 
 function enqueue(item) {
@@ -210,16 +211,9 @@ function syncBanner() {
   if (!S.queue.length) return '';
   const err = S.queue.find(q => q.error);
   return `<div class="banner ${err ? '' : 'green'}"><div class="grow">${S.queue.length} waiting to send${err ? ' – ' + esc(err.error) : ''}</div>
-    <button class="btn small" onclick="flush()">Send now</button>
-    ${err ? '<button class="btn small ghost" onclick="dropStuck()">Discard</button>' : ''}</div>`;
+    <button class="btn small" onclick="flush()">Send now</button></div>`;
 }
 window.flush = flush;
-window.dropStuck = function () {
-  // the sheet refused this change; drop it so the rest can send
-  const i = S.queue.findIndex(q => q.error);
-  if (i < 0) return;
-  S.queue.splice(i, 1); saveQueue(); toast('Change discarded'); render(); flush();
-};
 
 /* ---------- maps ---------- */
 
@@ -240,8 +234,8 @@ function tileLayer() {
 
 function pinColour(use) {
   if (use === 'Take out') return { fill: '#F4A261', line: '#C96A2B' };
-  if (use === 'Both') return { fill: '#4CB782', line: '#C96A2B' };
-  return { fill: '#4CB782', line: '#1E5A44' };
+  if (use === 'Both') return { fill: '#6DB33F', line: '#C96A2B' };
+  return { fill: '#6DB33F', line: '#3F7A22' };
 }
 
 const pinIcon = () => L.divIcon({ className: 'wl-pin', html: '<span></span>', iconSize: [28, 28], iconAnchor: [14, 33] });
@@ -256,7 +250,9 @@ function makeMap(el, pts, opts) {
   pts.forEach(p => {
     if (p.lat == null || p.lon == null) return;
     const c = pinColour(p.use);
-    const m = L.circleMarker([p.lat, p.lon], { radius: opts.big ? 9 : 7, color: c.line, weight: 3, fillColor: c.fill, fillOpacity: .95 }).addTo(map);
+    const m = p.n
+      ? L.marker([p.lat, p.lon], { icon: L.divIcon({ className: 'wl-num', html: `<span class="seq ${p.use === 'Take out' ? 'out' : p.use === 'Both' ? 'both' : ''}">${p.n}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(map)
+      : L.circleMarker([p.lat, p.lon], { radius: opts.big ? 9 : 7, color: c.line, weight: 3, fillColor: c.fill, fillOpacity: .95 }).addTo(map);
     if (p.popup) m.bindPopup(p.popup);
     ll.push([p.lat, p.lon]);
   });
@@ -276,8 +272,8 @@ function screenSetup(msg) {
     ${msg ? `<div class="banner">${esc(msg)}</div>` : ''}
     <p class="muted">Connect Water Log to your Canoe Log Book. Paste the web app address and the App key
       from the Settings tab of the sheet. You only do this once on each phone.</p>
-    <label>Web app address</label><input id="su_url" value="${esc(c.url || '')}" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
-    <label>App key</label><input id="su_key" value="${esc(c.key || '')}" autocomplete="off">
+    <label>Web app address</label><input id="su_url" value="${esc(c.url || '')}" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="url">
+    <label>App key</label><input id="su_key" value="${esc(c.key || '')}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
     <div class="btnrow"><button class="btn block" onclick="saveSetup()">Connect</button></div>
     ${S.cfg ? `<h2>On this phone</h2>
       <div class="card flat"><div class="kv">
@@ -289,8 +285,14 @@ function screenSetup(msg) {
   </div>`;
 }
 window.saveSetup = async function () {
-  const url = $('#su_url').value.trim(), key = $('#su_key').value.trim();
-  if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/.test(url)) { toast('That doesn\'t look like a web app address ending /exec'); return; }
+  let raw = $('#su_url').value.replace(/\s+/g, ''), key = $('#su_key').value.replace(/\s+/g, '');
+  // a whole setup link pasted into the box also works
+  const link = raw.match(/#setup=([^&]+)&key=(.+)$/);
+  if (link) { raw = dec(link[1]); key = dec(link[2]); }
+  const m = raw.match(/script\.google\.com\/macros\/s\/([\w-]+)\/exec/i);
+  if (!m) { toast('That doesn\'t look like a web app address ending /exec'); return; }
+  const url = 'https://script.google.com/macros/s/' + m[1] + '/exec';
+  if (!key) { toast('Add the App key'); return; }
   S.cfg = { url, key }; store.set(LS.cfg, S.cfg);
   toast('Connecting…');
   try { const d = await api('data'); S.data = d; store.set(LS.data, d); toast('Connected – ' + d.entries.length + ' paddles'); go('home'); render(); }
@@ -301,32 +303,48 @@ window.refresh = refresh;
 function screenHome() {
   const list = entries(), st = stats(list);
   const name = (S.data && S.data.settings && S.data.settings.appName) || 'Water Log';
-  const last = list[0];
-  return `<section class="hero">
-      <div class="brand"><div><h1>${esc(name)}</h1><div class="sub">${last ? 'Last paddle: ' + esc(last.river) + ', ' + fmtDate(last._d) : 'Your paddling log'}</div></div>
-        <button class="iconbtn" onclick="go('setup')" aria-label="Settings">${ICON.cog}</button></div>
-      <div class="stats">
-        <button class="stat" onclick="go('rivers')"><span class="num">${st.rivers}</span><span class="lbl">Rivers</span></button>
-        <button class="stat" onclick="go('trips')"><span class="num">${st.trips}</span><span class="lbl">Trips</span></button>
-        <button class="stat" onclick="go('buddies')"><span class="num">${st.buddies}</span><span class="lbl">Paddling buddies</span></button>
-      </div>
-    </section>
-    <div class="wrap">
-      ${syncBanner()}
-      <h2>Put-ins</h2>
-      <div class="legend"><span><i style="background:#4CB782"></i>Get in</span><span><i style="background:#4CB782;box-shadow:0 0 0 2px #C96A2B"></i>Both</span></div>
-      <div class="mapbox" id="homeMap"></div>
-    </div>`;
+  const n = S.queue.length;
+  return `<section class="home" id="home"><div class="board" id="board">
+      <div class="ph p1" role="img" aria-label="Hugh canoeing through white water"></div>
+      ${n ? `<button class="pending" onclick="flush()">${n} waiting to send · Send now</button>` : ''}
+      <button class="gear" onclick="go('setup')" aria-label="Settings">${ICON.cog}</button>
+      <h1 class="title">${esc(name)}</h1>
+      <button class="st s1" onclick="go('rivers')"><b>${st.rivers}</b><span>Rivers</span></button>
+      <button class="st s2" onclick="go('trips')"><b>${st.trips}</b><span>Trips</span></button>
+      <button class="st s3" onclick="go('buddies')"><b>${st.buddies}</b><span>Buddies</span></button>
+      <div class="ph p2" role="img" aria-label="Hugh in his red canoe"></div>
+    </div></section>`;
 }
-function afterHome() {
-  const el = $('#homeMap'); if (!el) return;
-  const riversOf = {};
-  entries().forEach(e => { [e.putInPlace].forEach(p => { if (p) (riversOf[p] = riversOf[p] || new Set()).add(e.river); }); });
-  const pts = places().filter(p => p.use !== 'Take out' && p.latN != null).map(p => {
-    const rivs = Array.from(riversOf[p.name] || [p.river]).filter(Boolean);
+function fitHome() {
+  const b = $('#board'), h = $('#home'); if (!b || !h) return;
+  const k = h.clientWidth / 393;
+  b.style.transform = 'scale(' + k + ')';
+  h.style.height = Math.round(768 * k) + 'px';
+}
+function afterHome() { fitHome(); }
+window.addEventListener('resize', fitHome);
+
+/* ---------- map of all places ---------- */
+function riversByPlace() {
+  const m = {};
+  entries().forEach(e => [e.putInPlace, e.takeOutPlace].forEach(p => { if (p) (m[p] = m[p] || new Set()).add(e.river); }));
+  return m;
+}
+function screenMap() {
+  return topbar('Map', '') + `<div class="wrap">
+    <div class="legend" style="margin-top:12px"><span><i style="background:#6DB33F"></i>Get in</span><span><i class="out"></i>Take out</span><span><i class="both"></i>Both</span></div>
+    <div class="mapfull" id="allMap"></div></div>`;
+}
+function afterMap() {
+  const el = $('#allMap'); if (!el) return;
+  const rb = riversByPlace();
+  const pts = places().filter(p => p.latN != null).map(p => {
+    const rivs = Array.from(rb[p.name] || [p.river]).filter(Boolean);
+    const d = dirLink(p);
     return {
       lat: p.latN, lon: p.lonN, use: p.use,
-      popup: `<b>${esc(p.name)}</b><br>${rivs.map(r => `<a href="#river/${enc(r)}">${esc(r)}</a>`).join(' · ')}`
+      popup: `<b>${esc(p.name)}</b><br>${esc(p.use || '')}<br>${rivs.map(r => `<a href="#river/${enc(r)}">${esc(r)}</a>`).join(' · ')}` +
+        (d ? `<br><a href="${d}" target="_blank" rel="noopener">Directions</a>` : '')
     };
   });
   makeMap(el, pts, { maxZoom: 8 });
@@ -402,11 +420,64 @@ function riverPlaces(river, list) {
   });
   // also places filed against this river that haven't been used yet
   places().forEach(p => { if (p.river === river && !used[p.name]) used[p.name] = { kinds: new Set(), count: 0 }; });
-  return Object.entries(used).map(([n, u]) => {
+  const out = Object.entries(used).map(([n, u]) => {
     const p = pm[n] || { name: n };
     const use = p.use || (u.kinds.size === 2 ? 'Both' : u.kinds.has('out') ? 'Take out' : 'Get in');
     return Object.assign({}, p, { use, count: u.count, last: u.last });
-  }).sort((a, b) => (a.use === 'Take out') - (b.use === 'Take out') || b.count - a.count);
+  });
+  return flowOrder(out, list);
+}
+
+// Order a river's places from the top of the river down. Each trip says its put-in is upstream of its
+// take-out; places not linked by trips fall back to their position along the river's general direction.
+function flowOrder(ps, list) {
+  const n = ps.length, idx = {};
+  ps.forEach((p, i) => { idx[p.name] = i; });
+  let dx = 0, dy = 0;
+  const out = ps.map(() => new Set()), indeg = Array(n).fill(0);
+  list.forEach(e => {
+    const a = idx[e.putInPlace], b = idx[e.takeOutPlace];
+    if (a == null || b == null || a === b) return;
+    if (!out[a].has(b)) { out[a].add(b); indeg[b]++; }
+    const A = ps[a], B = ps[b];
+    if (A.latN != null && B.latN != null) {
+      const vx = (B.lonN - A.lonN) * Math.cos(A.latN * Math.PI / 180), vy = B.latN - A.latN, len = Math.hypot(vx, vy) || 1;
+      dx += vx / len; dy += vy / len;
+    }
+  });
+  const sc = ps.map(p => p.latN == null ? Infinity : p.lonN * Math.cos(p.latN * Math.PI / 180) * dx + p.latN * dy);
+  // places with no position sit just below where they were put in from (or just above where they lead to)
+  const preds = ps.map(() => []); out.forEach((set, a) => set.forEach(b => preds[b].push(a)));
+  ps.forEach((p, i) => {
+    if (sc[i] !== Infinity) return;
+    const up = preds[i].map(a => sc[a]).filter(isFinite), down = Array.from(out[i]).map(b => sc[b]).filter(isFinite);
+    if (up.length) sc[i] = Math.max(...up) + 1e-9; else if (down.length) sc[i] = Math.min(...down) - 1e-9;
+  });
+  // a put-in is never placed below anywhere it leads to, even if its saved position is off
+  const eff = Array(n).fill(null), busy = Array(n).fill(false);
+  const effOf = i => {
+    if (eff[i] != null) return eff[i];
+    if (busy[i]) return sc[i];
+    busy[i] = true;
+    let v = sc[i];
+    out[i].forEach(j => { v = Math.min(v, effOf(j) - 1e-9); });
+    busy[i] = false;
+    return (eff[i] = v);
+  };
+  ps.forEach((p, i) => effOf(i));
+  const num = v => v === Infinity ? 1e12 : v;
+  const cmp = (a, b) => (num(eff[a]) - num(eff[b])) || (num(sc[a]) - num(sc[b])) ||
+    (ps[a].use === 'Take out') - (ps[b].use === 'Take out') || ps[a].name.localeCompare(ps[b].name);
+  const done = Array(n).fill(false), order = [];
+  while (order.length < n) {
+    let cand = [];
+    for (let i = 0; i < n; i++) if (!done[i] && indeg[i] <= 0) cand.push(i);
+    if (!cand.length) for (let i = 0; i < n; i++) if (!done[i]) cand.push(i); // trips that loop back
+    cand.sort(cmp);
+    const i = cand[0]; done[i] = true; order.push(i);
+    out[i].forEach(j => { indeg[j]--; });
+  }
+  return order.map(i => ps[i]);
 }
 
 function placeCard(p, noEdit) {
@@ -419,9 +490,39 @@ function placeCard(p, noEdit) {
     ${p.notes ? `<div class="notes muted">${esc(p.notes)}</div>` : ''}
     <div class="btnrow">
       ${d ? `<a class="btn small" href="${d}" target="_blank" rel="noopener">${ICON.nav} Directions</a>` : ''}
+      <button class="btn small share" onclick="sharePlace(${esc(JSON.stringify(p.name))})">${ICON.share} Share</button>
       ${noEdit ? '' : `<a class="btn small ghost" href="#place/${enc(p.name)}">${ICON.edit} ${p.latN == null ? 'Add position' : 'Edit'}</a>`}
     </div></div>`;
 }
+
+// One line per place; tap to open the details
+function placeRow(p, i) {
+  const cls = p.use === 'Take out' ? 'out' : p.use === 'Both' ? 'both' : '';
+  const d = dirLink(p);
+  const pos = p.position && p.position !== 'From log' ? `<span class="badge warn">${esc(p.position)}</span>` : '';
+  return `<details class="prow"><summary><span class="seq ${cls}">${i + 1}</span><span class="nm">${esc(p.name)}</span><span class="use">${esc(p.use || '')}</span>${ICON.chev}</summary>
+    <div class="body">${pos}
+      <div class="codes">${p.grid ? `<span>${esc(p.grid)}</span>` : ''}${p.w3w ? `<span><a href="${w3wLink(p.w3w)}" target="_blank" rel="noopener">${esc(p.w3w)}</a></span>` : ''}${p.count ? `<span>Used ${p.count}×</span>` : ''}</div>
+      ${p.notes ? `<div class="notes muted">${esc(p.notes)}</div>` : ''}
+      <div class="btnrow">
+        ${d ? `<a class="btn small" href="${d}" target="_blank" rel="noopener">${ICON.nav} Directions</a>` : ''}
+        <button class="btn small share" onclick="sharePlace(${esc(JSON.stringify(p.name))})">${ICON.share} Share</button>
+        <a class="btn small ghost" href="#place/${enc(p.name)}">${ICON.edit} ${p.latN == null ? 'Add position' : 'Edit'}</a>
+      </div></div></details>`;
+}
+
+// Share a place through the phone's share sheet (WhatsApp, Messages, email…)
+window.sharePlace = async function (name) {
+  const p = placeByName()[name]; if (!p) return;
+  const lines = [p.name + (p.river ? ' – ' + p.river : '') + (p.use ? ' (' + p.use.toLowerCase() + ')' : '')];
+  if (p.latN != null) lines.push('Map: https://www.google.com/maps/search/?api=1&query=' + p.latN + ',' + p.lonN);
+  if (p.grid) lines.push('OS grid ref: ' + p.grid);
+  if (p.w3w) lines.push('what3words: ///' + String(p.w3w).replace(/^\/+/, ''));
+  if (p.notes) lines.push(p.notes);
+  const text = lines.join('\n');
+  if (navigator.share) { try { await navigator.share({ title: p.name, text }); } catch (e) {} return; }
+  try { await navigator.clipboard.writeText(text); toast('Copied – paste it into a message'); } catch (e) { toast('Sharing isn\'t available here'); }
+};
 
 function screenRiver(name) {
   const list = entries().filter(e => (e.river || '').trim() === name);
@@ -434,9 +535,10 @@ function screenRiver(name) {
     <div class="meta"><span class="badge">${list.length} ${list.length === 1 ? 'trip' : 'trips'}</span>${yrs ? `<span class="badge grey">${yrs}</span>` : ''}
       ${Array.from(r.sections).slice(0, 6).map(s => `<span class="badge orange">${esc(s)}</span>`).join('')}</div>
     <div class="mapbox small" id="riverMap"></div>
-    <div class="legend"><span><i style="background:#4CB782"></i>Get in</span><span><i style="background:#F4A261"></i>Take out</span><span><i style="background:#4CB782;box-shadow:0 0 0 2px #C96A2B"></i>Both</span></div>
+    <div class="legend"><span><i style="background:#6DB33F"></i>Get in</span><span><i class="out"></i>Take out</span><span><i class="both"></i>Both</span></div>
     <h2>Get-ins &amp; take-outs</h2>
-    ${ps.map(placeCard).join('') || '<div class="empty">No places saved yet</div>'}
+    ${ps.length ? `<div class="updown">Top of the river first, worked out from your trips. Tap a place for details.</div>
+      <div class="places">${ps.map(placeRow).join('')}</div>` : '<div class="empty">No places saved yet</div>'}
     ${Object.keys(gauges).length ? `<h2>Gauges</h2><div class="card">${Object.keys(gauges).map(g =>
       `<div class="row" style="box-shadow:none;margin:0;padding:8px 0;cursor:default"><div class="grow"><div class="t">${esc(g)}</div>
         <div class="s">${gauges[g]} ${gauges[g] === 1 ? 'reading' : 'readings'}${(S.data.gauges || {})[g] ? '' : ' · link searches the web'}</div></div>
@@ -453,8 +555,8 @@ function screenRiver(name) {
 function afterRiver(name) {
   const el = $('#riverMap'); if (!el) return;
   const list = entries().filter(e => (e.river || '').trim() === name);
-  const pts = riverPlaces(name, list).filter(p => p.latN != null).map(p => ({
-    lat: p.latN, lon: p.lonN, use: p.use,
+  const pts = riverPlaces(name, list).map((p, i) => Object.assign(p, { n: i + 1 })).filter(p => p.latN != null).map(p => ({
+    lat: p.latN, lon: p.lonN, use: p.use, n: p.n,
     popup: `<b>${esc(p.name)}</b><br>${esc(p.use)}${dirLink(p) ? `<br><a href="${dirLink(p)}" target="_blank" rel="noopener">Directions</a>` : ''}`
   }));
   makeMap(el, pts, { big: true, maxZoom: 15, zoom: 14 });
@@ -497,84 +599,12 @@ function screenTrip(id) {
 function screenFinish() {
   const list = toFinish(entries());
   const recent = list.filter(e => e._d && (Date.now() - e._d) < 400 * 864e5), older = list.filter(e => !recent.includes(e));
-  const toReview = candidates().filter(c => c.status === 'To review' || c.status === 'Not sure').length;
   return topbar('To finish', '') + `<div class="wrap">${syncBanner()}
-    ${toReview ? `<a class="card row" href="#review" style="text-decoration:none;color:inherit">
-      <div class="grow"><div class="t">Old trips to check</div><div class="s">Found in your calendar and photos</div></div>
-      <span class="badge orange">${toReview}</span>${ICON.chev}</a>` : ''}
     <p class="muted">Paddles that still need notes. Tap one to finish it.</p>
     <ul class="list">${tripRows(recent)}</ul>
     ${older.length ? `<details class="more"><summary>Older entries without notes (${older.length})</summary><ul class="list">${tripRows(older)}</ul></details>` : ''}
     ${!list.length ? '<div class="empty">All done</div>' : ''}</div>`;
 }
-
-/* ---------- old trips to check (Candidates tab) ---------- */
-
-function candidates() {
-  // Candidates from the sheet, with any choices made on the phone but not yet sent
-  const base = (S.data && S.data.candidates) || [];
-  const mine = {};
-  S.queue.filter(q => q.kind === 'candidate').forEach(q => { mine[q.id] = q.status; });
-  return base.map(c => Object.assign({}, c, mine[c.id] ? { status: mine[c.id] } : {}, { _d: parseDate(c.date) }));
-}
-const findCand = id => candidates().find(c => c.id === id);
-let REVIEW = { show: 'To review', kind: 'All' };
-
-function screenReview() {
-  const all = candidates();
-  const count = s => all.filter(c => c.status === s).length;
-  const seg = (k, vals) => `<div class="seg">${vals.map(([v, l]) => `<button class="${REVIEW[k] === v ? 'on' : ''}" onclick="reviewFilter('${k}','${v}')">${l}</button>`).join('')}</div>`;
-  return topbar('Old trips to check', 'finish') + `<div class="wrap">${syncBanner()}
-    <p class="muted">Days your calendar or photos suggest you paddled but aren't in the log. Calendar entries marked tbc were often placeholders.</p>
-    ${seg('show', [['To review', 'To check (' + count('To review') + ')'], ['Not sure', 'Not sure (' + count('Not sure') + ')'], ['Done', 'Done']])}
-    ${seg('kind', [['All', 'All'], ['Trip', 'Trips'], ['Session', 'Club sessions']])}
-    <ul class="list" id="candList">${candRows()}</ul></div>`;
-}
-function candRows() {
-  const list = candidates().filter(c =>
-    (REVIEW.show === 'Done' ? (c.status === 'Added' || c.status === "Didn't paddle") : c.status === REVIEW.show) &&
-    (REVIEW.kind === 'All' || c.kind === REVIEW.kind));
-  if (REVIEW.show === 'Done') list.reverse();
-  return list.map(c => `<li><a class="row" href="#cand/${enc(c.id)}">
-      <div class="datebox"><b>${c._d ? c._d.getDate() : '?'}</b><span>${c._d ? MONTHS[c._d.getMonth()] + ' ' + String(c._d.getFullYear()).slice(2) : ''}</span></div>
-      <div class="grow"><div class="t">${esc(c.cal || String(c.folder).replace(/ \(.*$/, '') || 'Photos')}</div>
-      <div class="s">${esc([c.river, c.folder && c.cal ? 'photos' : '', /tbc/i.test(c.evidence) ? 'tbc' : ''].filter(Boolean).join(' · ') || c.evidence)}</div></div>
-      ${c.status === 'Added' ? '<span class="badge">Added</span>' : c.status === "Didn't paddle" ? '<span class="badge grey">No</span>' : ''}${ICON.chev}</a></li>`).join('')
-    || '<div class="empty">Nothing here</div>';
-}
-window.reviewFilter = function (k, v) { REVIEW[k] = v; render(); };
-
-function screenCand(id) {
-  const c = findCand(id);
-  if (!c) return topbar('Old trip', 'review') + '<div class="wrap empty">Not found – try refreshing.</div>';
-  const row = (l, v) => v ? `<dt>${l}</dt><dd>${esc(v)}</dd>` : '';
-  return topbar(fmtDate(c._d), 'review') + `<div class="wrap">
-    <div class="card"><h3>${esc(c.cal || String(c.folder).replace(/ \(.*$/, '') || 'Photos')}</h3>
-      <div class="meta"><span class="badge grey">${esc(c.kind)}</span><span class="badge ${/tbc/i.test(c.evidence) ? 'warn' : ''}">${esc(c.evidence)}</span>
-        ${c.status !== 'To review' ? `<span class="badge orange">${esc(c.status)}</span>` : ''}</div>
-      <dl class="kv" style="margin-top:12px">
-        ${row('Calendar', c.cal)}${row('River (guess)', c.river)}${row('Photos', c.folder)}${row('Photo tags', c.tags)}
-        ${c.gps ? `<dt>Photo spot</dt><dd><a href="https://www.google.com/maps?q=${enc(c.gps.replace(/\s/g, ''))}" target="_blank" rel="noopener">${esc(c.gps)}</a></dd>` : ''}
-        ${row('Logged nearby', c.near)}${row('Notes', c.notes)}
-      </dl></div>
-    <div class="btnrow"><a class="btn block" href="#addc/${enc(c.id)}">${ICON.edit} I paddled – add to log</a></div>
-    <div class="btnrow"><button class="btn ghost" style="flex:1" onclick="setCand('${esc(c.id)}',&quot;Didn't paddle&quot;)">Didn't paddle</button>
-      <button class="btn ghost" style="flex:1" onclick="setCand('${esc(c.id)}','Not sure')">Not sure</button>
-      ${c.status !== 'To review' ? `<button class="btn ghost" style="flex:1" onclick="setCand('${esc(c.id)}','To review')">Undo</button>` : ''}</div>
-  </div>`;
-}
-function queueCand(id, status) {
-  S.queue = S.queue.filter(q => !(q.kind === 'candidate' && q.id === id));
-  enqueue({ kind: 'candidate', id, status });
-}
-window.setCand = function (id, status) {
-  // move on to the next one still to check
-  const list = candidates().filter(c => c.status === REVIEW.show && (REVIEW.kind === 'All' || c.kind === REVIEW.kind));
-  const i = list.findIndex(c => c.id === id);
-  queueCand(id, status);
-  const next = list[i + 1];
-  if (status !== 'To review' && next) go('cand/' + enc(next.id)); else go('review');
-};
 
 /* ---------- add / edit form ---------- */
 
@@ -610,19 +640,17 @@ function placeField(which, label, value) {
     </div>`;
 }
 
-function screenForm(id, candId) {
+function screenForm(id) {
   const editing = id != null;
   let e = {};
   if (editing) {
     e = findEntry(id);
     if (!e) return topbar('Edit', 'home') + '<div class="wrap empty">Not found – try refreshing.</div>';
   }
-  const cand = candId ? findCand(candId) : null;
-  const draft = !editing && !cand ? store.get(LS.draft, null) : null;
+  const draft = !editing ? store.get(LS.draft, null) : null;
   const v = Object.assign({ date: isoDate(new Date()), craft: 'Canoe' }, draft || {},
-    editing ? Object.assign({}, e, { date: e._d ? isoDate(e._d) : '' }) : {},
-    cand ? { date: cand._d ? isoDate(cand._d) : '', river: String(cand.river || '').split(' / ')[0] } : {});
-  FORM.id = id; FORM.cand = cand ? cand.id : null; FORM.river = v.river || ''; FORM.np = { in: {}, out: {} };
+    editing ? Object.assign({}, e, { date: e._d ? isoDate(e._d) : '' }) : {});
+  FORM.id = id; FORM.river = v.river || ''; FORM.np = { in: {}, out: {} };
   FORM.paddlers = splitNames(v.paddlers);
   const ents = entries();
   const rivers = Array.from(new Set(ents.map(x => x.river).filter(Boolean))).sort();
@@ -641,9 +669,8 @@ function screenForm(id, candId) {
       ${ta('notes', 'Notes', 'How it went, lines, swims, lessons…')}
       ${ta('putInNotes', 'Put-in notes for this trip', '')}
       ${ta('takeOutNotes', 'Take-out notes for this trip', '')}`;
-  return topbar(editing ? 'Edit paddle' : 'Log a paddle', editing ? 'trip/' + id : (cand ? 'cand/' + cand.id : 'home')) + `<div class="wrap form" id="paddleForm">
+  return topbar(editing ? 'Edit paddle' : 'Log a paddle', editing ? 'trip/' + id : 'home') + `<div class="wrap form" id="paddleForm">
     ${!editing && draft ? '<div class="banner"><div class="grow">Carrying on from an unsaved draft.</div><button class="btn small ghost" onclick="clearDraft()">Start fresh</button></div>' : ''}
-    ${cand ? `<div class="banner green"><div class="grow">From ${esc(cand.cal || cand.folder || 'your photos')}. Check the date and river.</div></div>` : ''}
     <div class="grid2"><div>${f('date', 'Date', '', 'date')}</div>
       <div><label>Craft</label><input id="f_craft" list="dl_crafts" value="${esc(v.craft || '')}"></div></div>
     <label>River / water</label><input id="f_river" list="dl_rivers" value="${esc(v.river || '')}" onchange="riverChanged()" autocomplete="off">
@@ -666,7 +693,7 @@ function screenForm(id, candId) {
 }
 function afterForm() {
   sectionsList(); drawPaddlers();
-  if (!FORM.id && !FORM.cand) { const fm = $('#paddleForm'); fm && fm.addEventListener('input', saveDraft); fm && fm.addEventListener('change', saveDraft); }
+  if (!FORM.id) { const fm = $('#paddleForm'); fm && fm.addEventListener('input', saveDraft); fm && fm.addEventListener('change', saveDraft); }
 }
 function sectionsList() {
   const r = $('#f_river').value.trim();
@@ -795,7 +822,7 @@ window.submitForm = function () {
   } else {
     const item = { kind: 'add', paddle: p };
     enqueue(item);
-    if (FORM.cand) queueCand(FORM.cand, 'Added'); else store.del(LS.draft);
+    store.del(LS.draft);
     go('trip/p:' + item.uid);
   }
 };
@@ -874,16 +901,16 @@ function render() {
     home: [screenHome, afterHome], rivers: [screenRivers, afterRivers], river: [screenRiver, afterRiver],
     trips: [screenTrips], trip: [screenTrip], buddies: [screenBuddies], buddy: [screenBuddy],
     add: [() => screenForm(null), afterForm], edit: [screenForm, afterForm], finish: [screenFinish],
-    place: [screenPlace, afterPlace], setup: [screenSetup],
-    review: [screenReview], cand: [screenCand], addc: [a => screenForm(null, a), afterForm]
+    place: [screenPlace, afterPlace], setup: [screenSetup], map: [screenMap, afterMap]
   };
   const [scr, after] = screens[route] || screens.home;
   app.innerHTML = scr(route === 'add' ? undefined : arg);
   if (after) after(arg);
-  const tab = { home: 'home', trips: 'home', buddies: 'home', buddy: 'home', rivers: 'rivers', river: 'rivers', place: 'rivers', add: 'add', edit: 'finish', finish: 'finish', trip: 'home', review: 'finish', cand: 'finish', addc: 'finish' }[route] || 'home';
+  const tab = { home: 'home', trips: 'home', buddies: 'home', buddy: 'home', rivers: 'rivers', river: 'rivers', place: 'rivers', add: 'add', edit: 'finish', finish: 'finish', trip: 'home', map: 'map' }[route] || 'home';
+  document.body.classList.toggle('homepage', route === 'home' || !screens[route]);
   $$('#nav a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
   updateDot();
-  if (route !== 'add' && route !== 'edit' && route !== 'addc') window.scrollTo(0, 0);
+  if (route !== 'add' && route !== 'edit') window.scrollTo(0, 0);
 }
 
 // One-tap setup link:  …/#setup=<web app url>&key=<app key>
@@ -905,14 +932,5 @@ window.addEventListener('hashchange', () => { setupFromLink(); render(); });
   const had = !!S.data;
   render();
   if (S.cfg) { if (had) refresh(true); flush(); }
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
-      document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
-    }).catch(() => {});
-    // a new version has taken over: reload, but never in the middle of a form
-    let fresh = false;
-    const reloadSoon = () => { if (/^#(addc?|edit|place)\b/.test(location.hash)) { fresh = true; } else location.reload(); };
-    if (navigator.serviceWorker.controller) navigator.serviceWorker.addEventListener('controllerchange', reloadSoon);
-    window.addEventListener('hashchange', () => { if (fresh && !/^#(addc?|edit|place)\b/.test(location.hash)) location.reload(); });
-  }
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
