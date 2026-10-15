@@ -46,6 +46,7 @@ function parseDate(s) {
   const i = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
   return i ? new Date(+i[1], +i[2] - 1, +i[3]) : null;
 }
+const dateBox = d => `<div class="datebox"><b>${d ? d.getDate() : '?'}</b><span class="m">${d ? MONTHS[d.getMonth()] : ''}</span><span class="y">${d ? d.getFullYear() : ''}</span></div>`;
 const fmtDate = d => d ? d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear() : '';
 const isoDate = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 const ukDate = iso => { const p = String(iso).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso; };
@@ -171,12 +172,25 @@ async function flush() {
         else if (q.kind === 'candidate') await api('candidate', { id: q.id, status: q.status });
         S.queue.shift(); sent++; saveQueue();
       } catch (e) {
+        if (e.server && q.kind === 'update' && /moved/i.test(e.message) && !q.relocated && await relocate(q)) continue;
         if (e.server) { q.error = e.message; saveQueue(); toast('Not saved: ' + e.message); }
         break; // no signal (or a problem) – try again later
       }
     }
   } finally { S.syncing = false; }
   if (sent) { toast(sent === 1 ? 'Sent to your log' : sent + ' changes sent to your log'); await refresh(true); }
+}
+
+// The sheet was rearranged on the PC since the phone last loaded it: find the trip again by its date and river
+async function relocate(q) {
+  q.relocated = true;
+  let d;
+  try { d = await api('data'); } catch (e) { return false; }
+  S.data = d; store.set(LS.data, d);
+  const hits = (d.entries || []).filter(x => x.date === q.expect.date && x.river === q.expect.river);
+  if (hits.length !== 1) return false;
+  q.row = hits[0].row; delete q.error; saveQueue();
+  return true;
 }
 
 function enqueue(item) {
@@ -187,6 +201,17 @@ function enqueue(item) {
 }
 
 window.addEventListener('online', () => { flush(); refresh(true); });
+
+// Phones: keep to portrait. iPhone web apps can't lock rotation, so cover the screen in landscape.
+function checkTurn() {
+  const t = screen.orientation && screen.orientation.type;
+  const land = t ? t.startsWith('landscape') : Math.abs(window.orientation || 0) === 90;
+  document.body.classList.toggle('turned', !!land && Math.min(screen.width, screen.height) < 600);
+}
+try { screen.orientation && screen.orientation.lock && screen.orientation.lock('portrait').catch(() => {}); } catch (e) {}
+window.addEventListener('orientationchange', () => setTimeout(checkTurn, 100));
+screen.orientation && screen.orientation.addEventListener && screen.orientation.addEventListener('change', checkTurn);
+checkTurn();
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { flush(); } });
 
 /* ================= UI bits ================= */
@@ -375,7 +400,7 @@ function screenTrips() {
 }
 function tripRows(list) {
   return list.map(e => `<li><a class="row" href="#trip/${e.row || 'p:' + e.pendingUid}">
-      <div class="datebox"><b>${e._d ? e._d.getDate() : '?'}</b><span>${e._d ? MONTHS[e._d.getMonth()] + ' ' + String(e._d.getFullYear()).slice(2) : ''}</span></div>
+      ${dateBox(e._d)}
       <div class="grow"><div class="t">${esc(e.river)}${e.section ? ' · ' + esc(e.section) : ''}</div>
       <div class="s">${esc([e.putInPlace, e.paddlers].filter(Boolean).join(' · ') || e.craft || '')}</div></div>
       ${e.pendingUid ? '<span class="badge orange">Waiting</span>' : ''}${ICON.chev}</a></li>`).join('') || '<div class="empty">No trips yet</div>';
@@ -564,7 +589,7 @@ function screenRiver(name) {
     <ul class="list">${list.map(e => {
       const lv = [e.level !== '' && e.level != null ? e.level + ' m' : '', e.flow ? e.flow + ' cumecs' : ''].filter(Boolean).join(' · ');
       return `<li><a class="row" href="#trip/${e.row || 'p:' + e.pendingUid}">
-        <div class="datebox"><b>${e._d ? e._d.getDate() : '?'}</b><span>${e._d ? MONTHS[e._d.getMonth()] + ' ' + String(e._d.getFullYear()).slice(2) : ''}</span></div>
+        ${dateBox(e._d)}
         <div class="grow"><div class="t">${esc(e.section || e.putInPlace || e.river)}${lv ? ` <span class="badge">${esc(lv)}</span>` : ''}</div>
         <div class="s">${esc([e.gauge, e.levelComments].filter(Boolean).join(' – ') || 'No level noted')}</div></div>${ICON.chev}</a></li>`;
     }).join('')}</ul></div>`;
@@ -655,7 +680,7 @@ function candRows() {
     (REVIEW.kind === 'All' || c.kind === REVIEW.kind));
   if (REVIEW.show === 'Done') list.reverse();
   return list.map(c => `<li><a class="row" href="#cand/${enc(c.id)}">
-      <div class="datebox"><b>${c._d ? c._d.getDate() : '?'}</b><span>${c._d ? MONTHS[c._d.getMonth()] + ' ' + String(c._d.getFullYear()).slice(2) : ''}</span></div>
+      ${dateBox(c._d)}
       <div class="grow"><div class="t">${esc(c.cal || String(c.folder).replace(/ \(.*$/, '') || 'Photos')}</div>
       <div class="s">${esc([c.river, c.folder && c.cal ? 'photos' : '', /tbc/i.test(c.evidence) ? 'tbc' : ''].filter(Boolean).join(' · ') || c.evidence)}</div></div>
       ${c.status === 'Added' ? '<span class="badge">Added</span>' : c.status === "Didn't paddle" ? '<span class="badge grey">No</span>' : ''}${ICON.chev}</a></li>`).join('')
@@ -780,7 +805,7 @@ function screenForm(id, candId) {
     <datalist id="dl_crafts">${crafts.map(r => `<option value="${esc(r)}">`).join('')}</datalist>
     <datalist id="dl_gauges">${gauges.map(r => `<option value="${esc(r)}">`).join('')}</datalist>
     <datalist id="dl_sections"></datalist>
-    <datalist id="dl_buddies">${buddyCounts(ents).map(([n]) => `<option value="${esc(n)}">`).join('')}</datalist>
+    <datalist id="dl_buddies">${buddyCounts(ents).slice(0, 30).map(([n]) => n).sort((a, b) => a.localeCompare(b)).map(n => `<option value="${esc(n)}">`).join('')}</datalist>
   </div>`;
 }
 function afterForm() {
@@ -841,7 +866,8 @@ window.useGPS = function (w) {
 };
 window.pickOnMap = function (w) {
   const el = $('#np_' + w + '_map'); el.hidden = false;
-  if (FORM['map_' + w]) return;
+  setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+  if (FORM['map_' + w]) { FORM['map_' + w].invalidateSize(); return; }
   const near = places().filter(p => p.river === FORM.river && p.latN != null);
   const map = makeMap(el, near.map(p => ({ lat: p.latN, lon: p.lonN, use: p.use, popup: esc(p.name) })), { maxZoom: 14 });
   if (!map) return;
@@ -931,7 +957,7 @@ function screenPlace(name) {
     <h2>Position</h2>
     <div class="btnrow"><button class="btn small" onclick="placeGPS()">${ICON.gps} Use my location</button>
       <span class="muted" style="align-self:center">or tap the map</span></div>
-    <div class="mapbox small" id="placeMap"></div>
+    <div class="mapbox tall" id="placeMap"></div>
     <div class="grid2"><div><label>OS grid ref</label><input id="pl_grid" value="${esc(p.grid || '')}" onchange="placeGrid()"></div>
       <div><label>what3words</label><input id="pl_w3w" value="${esc(p.w3w || '')}"></div></div>
     <div class="muted" id="pl_pos">${p.latN != null ? p.latN.toFixed(5) + ', ' + p.lonN.toFixed(5) : 'No position yet'}</div>
