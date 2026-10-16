@@ -26,6 +26,8 @@ const enc = encodeURIComponent, dec = decodeURIComponent;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const ICON = {
+  camera: '<svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+  bin: '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
   chev: '<svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
   back: '<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>',
   cog: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
@@ -62,7 +64,8 @@ function entries() {
   }));
   const updates = {};
   S.queue.filter(q => q.kind === 'update').forEach(q => { updates[q.row] = q; });
-  const all = base.map(e => updates[e.row] ? Object.assign({}, e, updates[e.row].paddle, { date: ukDate(updates[e.row].paddle.date), row: e.row, pendingUid: updates[e.row].uid }) : e)
+  const dels = new Set(S.queue.filter(q => q.kind === 'delete').map(q => String(q.row)));
+  const all = base.filter(e => !dels.has(String(e.row))).map(e => updates[e.row] ? Object.assign({}, e, updates[e.row].paddle, { date: ukDate(updates[e.row].paddle.date), row: e.row, pendingUid: updates[e.row].uid }) : e)
     .concat(pending);
   all.forEach(e => { e._d = parseDate(e.date); });
   return all.sort((a, b) => (b._d || 0) - (a._d || 0) || String(b.start).localeCompare(String(a.start)));
@@ -170,9 +173,11 @@ async function flush() {
         else if (q.kind === 'update') await api('update', { row: q.row, expect: q.expect, paddle: q.paddle });
         else if (q.kind === 'place') await api('place', { name: q.name, fields: q.fields });
         else if (q.kind === 'candidate') await api('candidate', { id: q.id, status: q.status });
+        else if (q.kind === 'photo') await api('addphoto', { trip: q.trip, photo: q.photo, uid: q.uid });
+        else if (q.kind === 'delete') await api('delete', { row: q.row, expect: q.expect, uid: q.uid });
         S.queue.shift(); sent++; saveQueue();
       } catch (e) {
-        if (e.server && q.kind === 'update' && /moved/i.test(e.message) && !q.relocated && await relocate(q)) continue;
+        if (e.server && (q.kind === 'update' || q.kind === 'delete') && /moved/i.test(e.message) && !q.relocated && await relocate(q)) continue;
         if (e.server) { q.error = e.message; saveQueue(); toast('Not saved: ' + e.message); }
         break; // no signal (or a problem) – try again later
       }
@@ -205,11 +210,12 @@ window.addEventListener('online', () => { flush(); refresh(true); });
 // Phones: keep to portrait. iPhone web apps can't lock rotation, so cover the screen in landscape.
 function checkTurn() {
   const t = screen.orientation && screen.orientation.type;
-  const land = t ? t.startsWith('landscape') : Math.abs(window.orientation || 0) === 90;
-  document.body.classList.toggle('turned', !!land && Math.min(screen.width, screen.height) < 600);
+  const land = (t ? t.startsWith('landscape') : Math.abs(window.orientation || 0) === 90) && window.innerWidth > window.innerHeight;
+  document.body.classList.toggle('turned', !!land && Math.min(screen.width, screen.height) < 600 && !document.body.classList.contains('viewing'));
 }
 try { screen.orientation && screen.orientation.lock && screen.orientation.lock('portrait').catch(() => {}); } catch (e) {}
-window.addEventListener('orientationchange', () => setTimeout(checkTurn, 100));
+window.addEventListener('orientationchange', () => setTimeout(checkTurn, 300));
+window.addEventListener('resize', checkTurn);
 screen.orientation && screen.orientation.addEventListener && screen.orientation.addEventListener('change', checkTurn);
 checkTurn();
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { flush(); } });
@@ -374,7 +380,7 @@ function riversByPlace() {
 }
 function screenMap() {
   return topbar('Map', '') + `<div class="wrap">
-    <div class="legend" style="margin-top:12px"><span><i style="background:#6DB33F"></i>Get in</span><span><i class="out"></i>Take out</span><span><i class="both"></i>Both</span></div>
+    <div class="legend" style="margin-top:12px"><span><i style="background:#6DB33F"></i>Get in</span><span><i class="out"></i>Take out</span><span><i class="both"></i>Both</span><span><i class="ph"></i>Photo</span></div>
     <div class="mapfull" id="allMap"></div></div>`;
 }
 function afterMap() {
@@ -389,14 +395,31 @@ function afterMap() {
         (d ? `<br><a href="${d}" target="_blank" rel="noopener">Directions</a>` : '')
     };
   });
-  makeMap(el, pts, { maxZoom: 8 });
+  const map = makeMap(el, pts, { maxZoom: 8 });
+  if (map) addPhotoDots(map, (S.data && S.data.photos) || []);
 }
 
-function screenTrips() {
+// Trips: one card per year; tap a year for its trips. Searching looks across all years.
+function screenTrips(year) {
   const list = entries();
+  if (year) {
+    const yl = list.filter(e => e._d && String(e._d.getFullYear()) === String(year));
+    return topbar(year + ' · ' + yl.length + (yl.length === 1 ? ' trip' : ' trips'), 'trips') + `<div class="wrap">
+      <ul class="list">${tripRows(yl)}</ul></div>`;
+  }
   return topbar('Trips', 'home') + `<div class="wrap">
     <input class="search" id="tq" placeholder="Search river, place, paddler…" oninput="filterTrips()">
-    <ul class="list" id="tripList">${tripRows(list)}</ul></div>`;
+    <div id="tripList">${yearCards(list)}</div></div>`;
+}
+function yearCards(list) {
+  const ys = {};
+  list.forEach(e => { const y = e._d ? e._d.getFullYear() : 'Undated'; (ys[y] = ys[y] || []).push(e); });
+  const keys = Object.keys(ys).sort((a, b) => (b === 'Undated') - (a === 'Undated') || b - a);
+  if (!keys.length) return '<div class="empty">No trips yet</div>';
+  return `<div class="years">${keys.map(y => {
+    const n = ys[y].length, rv = new Set(ys[y].map(e => e.river).filter(Boolean)).size;
+    return `<a class="ycard" href="#trips/${enc(y)}"><b>${esc(y)}</b><span>${n} ${n === 1 ? 'trip' : 'trips'}</span><small>${rv} ${rv === 1 ? 'river' : 'rivers'}</small></a>`;
+  }).join('')}</div>`;
 }
 function tripRows(list) {
   return list.map(e => `<li><a class="row" href="#trip/${e.row || 'p:' + e.pendingUid}">
@@ -406,9 +429,10 @@ function tripRows(list) {
       ${e.pendingUid ? '<span class="badge orange">Waiting</span>' : ''}${ICON.chev}</a></li>`).join('') || '<div class="empty">No trips yet</div>';
 }
 window.filterTrips = function () {
-  const q = $('#tq').value.toLowerCase();
+  const q = $('#tq').value.trim().toLowerCase();
+  if (!q) { $('#tripList').innerHTML = yearCards(entries()); return; }
   const list = entries().filter(e => [e.river, e.section, e.putInPlace, e.takeOutPlace, e.paddlers, e.notes, e.date].join(' ').toLowerCase().includes(q));
-  $('#tripList').innerHTML = tripRows(list);
+  $('#tripList').innerHTML = `<ul class="list">${tripRows(list)}</ul>`;
 };
 
 function screenBuddies() {
@@ -577,7 +601,7 @@ function screenRiver(name) {
     <div class="meta"><span class="badge">${list.length} ${list.length === 1 ? 'trip' : 'trips'}</span>${yrs ? `<span class="badge grey">${yrs}</span>` : ''}
       ${Array.from(r.sections).slice(0, 6).map(s => `<span class="badge orange">${esc(s)}</span>`).join('')}</div>
     <div class="mapbox small" id="riverMap"></div>
-    <div class="legend"><span><i style="background:#6DB33F"></i>Get in</span><span><i class="out"></i>Take out</span><span><i class="both"></i>Both</span></div>
+    <div class="legend"><span><i style="background:#6DB33F"></i>Get in</span><span><i class="out"></i>Take out</span><span><i class="both"></i>Both</span><span><i class="ph"></i>Photo</span></div>
     <h2>Get-ins &amp; take-outs</h2>
     ${ps.length ? `<div class="updown">Top of the river first, worked out from your trips. Tap a place for details.</div>
       <div class="places">${ps.map(placeRow).join('')}</div>` : '<div class="empty">No places saved yet</div>'}
@@ -601,8 +625,149 @@ function afterRiver(name) {
     lat: p.latN, lon: p.lonN, use: p.use, n: p.n,
     popup: `<b>${esc(p.name)}</b><br>${esc(p.use)}${dirLink(p) ? `<br><a href="${dirLink(p)}" target="_blank" rel="noopener">Directions</a>` : ''}`
   }));
-  makeMap(el, pts, { big: true, maxZoom: 15, zoom: 14 });
+  const map = makeMap(el, pts, { big: true, maxZoom: 15, zoom: 14 });
+  if (map) addPhotoDots(map, ((S.data && S.data.photos) || []).filter(p => (p.river || '').trim() === name));
 }
+
+/* ---------- photos ---------- */
+
+const MAX_PHOTOS = 5;
+const photoUrl = (id, w) => 'https://lh3.googleusercontent.com/d/' + id + '=w' + w;
+const tripLabel = t => [t.river, t.section, fmtDate(parseDate(t.date))].filter(Boolean).join(' · ');
+
+// Photos for a trip: those in the sheet plus any waiting on the phone
+function tripPhotos(e) {
+  const saved = ((S.data && S.data.photos) || []).filter(p => p.date === e.date && p.river === e.river)
+    .map(p => Object.assign({}, p, { thumb: photoUrl(p.id, 400), full: photoUrl(p.id, 1600) }));
+  const waiting = S.queue.filter(q => q.kind === 'photo' && q.trip.date === e.date && q.trip.river === e.river)
+    .map(q => Object.assign({}, q.trip, { taken: q.photo.taken, lat: q.photo.lat, lon: q.photo.lon,
+      thumb: 'data:image/jpeg;base64,' + q.photo.data, full: 'data:image/jpeg;base64,' + q.photo.data, waiting: true }));
+  return saved.concat(waiting);
+}
+
+function photoSection(e) {
+  const ph = tripPhotos(e), n = ph.length, id = e.row || 'p:' + e.pendingUid;
+  const add = !e.row ? '<p class="muted">You can add photos once this trip has been sent to your log.</p>'
+    : n >= MAX_PHOTOS ? ''
+    : `<label class="btn small ghost">${ICON.camera} Add photos<input type="file" accept="image/*" multiple hidden onchange="addPhotos(this,'${id}')"></label>`;
+  return `<h2>Photos</h2><div class="card">
+    ${n ? `<button class="btn small" onclick="showPhotos('${id}')">Show photos (${n})</button>` : '<span class="muted">No photos yet</span>'}
+    <div class="btnrow">${add}</div>
+    <div class="phgrid" id="phGrid"></div></div>`;
+}
+
+window.showPhotos = function (id) {
+  const e = findEntry(id); if (!e) return;
+  const ph = tripPhotos(e);
+  $('#phGrid').innerHTML = ph.map((p, i) => `<button class="phthumb" onclick="openTripPhoto('${id}',${i})">
+    <img src="${p.thumb}" alt="" loading="lazy">${p.waiting ? '<span class="badge orange">Waiting</span>' : ''}</button>`).join('');
+};
+window.openTripPhoto = function (id, i) { const e = findEntry(id); if (e) openViewer(tripPhotos(e), i); };
+
+// Read date and place from the photo, then shrink it for the phone (longest side 1600px)
+async function preparePhoto(file) {
+  let taken = '', lat = null, lon = null;
+  try {
+    if (window.exifr) {
+      const x = await exifr.parse(file, ['DateTimeOriginal', 'CreateDate']).catch(() => null) || {};
+      const t = x.DateTimeOriginal || x.CreateDate;
+      if (t instanceof Date && !isNaN(t)) taken = isoDate(t) + ' ' + t.toTimeString().slice(0, 5);
+      const g = await exifr.gps(file).catch(() => null);
+      if (g && isFinite(g.latitude) && isFinite(g.longitude)) { lat = +g.latitude.toFixed(6); lon = +g.longitude.toFixed(6); }
+    }
+  } catch (err) {}
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image(); img.src = url; await img.decode();
+    const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const data = c.toDataURL('image/jpeg', 0.82).split(',')[1];
+    return { data, name: file.name || 'photo.jpg', taken, lat, lon };
+  } finally { URL.revokeObjectURL(url); }
+}
+
+window.addPhotos = async function (input, id) {
+  const e = findEntry(id); const files = Array.from(input.files || []); input.value = '';
+  if (!e || !e.row || !files.length) return;
+  const room = MAX_PHOTOS - tripPhotos(e).length;
+  if (room <= 0) { toast('This trip already has ' + MAX_PHOTOS + ' photos'); return; }
+  if (files.length > room) toast('Only ' + room + ' more will fit – adding the first ' + room);
+  toast('Preparing photos…');
+  const trip = { date: e.date, river: e.river, section: e.section || '' };
+  for (const f of files.slice(0, room)) {
+    try {
+      const photo = await preparePhoto(f);
+      S.queue.push({ kind: 'photo', uid: uid(), trip, photo });
+    } catch (err) { toast("Couldn't read one of the photos"); }
+  }
+  if (!store.set(LS.queue, S.queue)) toast('Phone storage full – keep the app open until the photos have sent');
+  updateDot(); render(); showPhotos(id);
+  if (navigator.onLine) flush(); else toast('Photos saved on phone – will send when you have signal');
+};
+
+// Full-screen photo viewer: swipe or tap the arrows; turning the phone sideways is allowed here
+let VIEW = null;
+function openViewer(list, i) {
+  if (!list.length) return;
+  VIEW = { list, i: Math.max(0, Math.min(i, list.length - 1)) };
+  let v = $('#viewer');
+  if (!v) {
+    v = document.createElement('div'); v.id = 'viewer';
+    v.innerHTML = `<img alt=""><button class="vclose" onclick="closeViewer()" aria-label="Close">✕</button>
+      <button class="vprev" onclick="stepViewer(-1)" aria-label="Previous">‹</button><button class="vnext" onclick="stepViewer(1)" aria-label="Next">›</button>
+      <div class="vcap"></div>`;
+    let x0 = null;
+    v.addEventListener('touchstart', ev => { x0 = ev.touches[0].clientX; }, { passive: true });
+    v.addEventListener('touchend', ev => { if (x0 == null) return; const dx = ev.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 50) stepViewer(dx < 0 ? 1 : -1); });
+    document.body.appendChild(v);
+  }
+  document.body.classList.add('viewing'); checkTurn(); drawViewer();
+}
+function drawViewer() {
+  const v = $('#viewer'), p = VIEW.list[VIEW.i];
+  v.querySelector('img').src = p.full;
+  v.querySelector('.vcap').innerHTML = `<b>${esc(tripLabel(p))}</b>${VIEW.list.length > 1 ? `<span>${VIEW.i + 1} of ${VIEW.list.length}</span>` : ''}`;
+  v.querySelector('.vprev').hidden = VIEW.i === 0; v.querySelector('.vnext').hidden = VIEW.i >= VIEW.list.length - 1;
+}
+window.stepViewer = d => { if (!VIEW) return; const j = VIEW.i + d; if (j < 0 || j >= VIEW.list.length) return; VIEW.i = j; drawViewer(); };
+window.closeViewer = () => { const v = $('#viewer'); if (v) v.remove(); VIEW = null; document.body.classList.remove('viewing'); checkTurn(); };
+
+// Small photo dots, only on the two most zoomed-in map levels
+function addPhotoDots(map, list) {
+  const pts = list.filter(p => p.lat != null && p.lon != null && isFinite(p.lat) && isFinite(p.lon));
+  if (!pts.length) return;
+  const group = L.layerGroup();
+  pts.forEach(p => {
+    const m = L.circleMarker([p.lat, p.lon], { radius: 5, color: '#fff', weight: 1.5, fillColor: '#1C6FD1', fillOpacity: 1 });
+    m.on('click', () => {
+      const same = pts.filter(q => q.date === p.date && q.river === p.river)
+        .map(q => Object.assign({}, q, { full: photoUrl(q.id, 1600) }));
+      openViewer(same, same.findIndex(q => q.id === p.id));
+    });
+    group.addLayer(m);
+  });
+  const show = () => { const on = map.getZoom() >= map.getMaxZoom() - 1; if (on && !map.hasLayer(group)) group.addTo(map); if (!on && map.hasLayer(group)) map.removeLayer(group); };
+  map.on('zoomend', show); show();
+}
+
+/* ---------- delete a trip ---------- */
+window.askDelete = () => { $('#delAsk').hidden = false; $('#delBtn').hidden = true; };
+window.cancelDelete = () => { $('#delAsk').hidden = true; $('#delBtn').hidden = false; };
+window.doDelete = function () {
+  const id = String(FORM.id);
+  if (id.startsWith('p:')) {
+    // never sent: just drop it from the phone
+    S.queue = S.queue.filter(q => q.uid !== id.slice(2)); saveQueue();
+    toast('Trip deleted'); go('trips'); return;
+  }
+  const base = (S.data.entries || []).find(x => String(x.row) === id);
+  if (!base) { toast('Not found – try refreshing'); return; }
+  S.queue = S.queue.filter(q => !(q.kind === 'update' && String(q.row) === id));
+  enqueue({ kind: 'delete', row: base.row, expect: { date: base.date, river: base.river } });
+  toast('Trip deleted'); go('trips');
+};
 
 function findEntry(id) {
   const list = entries();
@@ -634,6 +799,7 @@ function screenTrip(id) {
       </dl></div>
     ${splitNames(e.paddlers).length ? `<h2>Paddlers</h2><div class="chips">${splitNames(e.paddlers).map(n => `<a class="chip" href="#buddy/${enc(n)}" style="text-decoration:none;color:inherit">${esc(n)}</a>`).join('')}</div>` : ''}
     <h2>Notes</h2><div class="card notes">${e.notes ? esc(e.notes) : '<span class="muted">No notes yet</span>'}</div>
+    ${photoSection(e)}
     ${editable ? `<div class="btnrow"><a class="btn block orange" href="#edit/${e.row || 'p:' + e.pendingUid}">${ICON.edit} ${e.notes ? 'Edit' : 'Finish this entry'}</a></div>` : ''}
   </div>`;
 }
@@ -801,6 +967,9 @@ function screenForm(id, candId) {
     <div class="chips" id="padSuggest"></div>
     ${full ? more : `<details class="more"><summary>More details (or finish later)</summary>${more}</details>`}
     <div class="btnrow" style="margin-top:22px"><button class="btn block" onclick="submitForm()">${editing ? 'Save changes' : 'Save paddle'}</button></div>
+    ${editing ? `<div class="delzone"><button class="btn ghost danger" id="delBtn" onclick="askDelete()">${ICON.bin} Delete this trip</button>
+      <div id="delAsk" class="banner warn" hidden><div class="grow"><b>Delete this trip?</b><br>It will be moved to the Deleted tab in your sheet.</div>
+        <button class="btn small danger" onclick="doDelete()">Delete</button><button class="btn small ghost" onclick="cancelDelete()">Keep</button></div></div>` : ''}
     <datalist id="dl_rivers">${rivers.map(r => `<option value="${esc(r)}">`).join('')}</datalist>
     <datalist id="dl_crafts">${crafts.map(r => `<option value="${esc(r)}">`).join('')}</datalist>
     <datalist id="dl_gauges">${gauges.map(r => `<option value="${esc(r)}">`).join('')}</datalist>
@@ -1022,6 +1191,7 @@ function render() {
     place: [screenPlace, afterPlace], setup: [screenSetup], map: [screenMap, afterMap],
     review: [screenReview], cand: [screenCand], addc: [a => screenForm(null, a), afterForm]
   };
+  if (VIEW) closeViewer();
   const [scr, after] = screens[route] || screens.home;
   app.innerHTML = scr(route === 'add' ? undefined : arg);
   if (after) after(arg);

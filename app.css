@@ -26,6 +26,7 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
 html, body { margin: 0; padding: 0; }
 body {
   background: var(--paper);
@@ -96,8 +97,8 @@ body.homepage { background: var(--night); padding-bottom: 0; }
 .row .badge { flex: none; }
 .chev { flex: none; width: 18px; height: 18px; stroke: var(--ink-soft); fill: none; stroke-width: 2.2; }
 .datebox {
-  flex: none; width: 54px; text-align: center; border-radius: 12px; background: var(--orange-soft); padding: 6px 0 7px;
-  font-family: Bricolage, sans-serif; line-height: 1.1;
+  flex: none; width: 58px; height: 58px; text-align: center; border-radius: 12px; background: var(--orange-soft); padding: 0;
+  display: flex; flex-direction: column; justify-content: center; font-family: Bricolage, sans-serif; line-height: 1.08;
 }
 .datebox b { display: block; font-size: 19px; font-weight: 600; color: var(--ink); }
 .datebox .m { display: block; font: 700 12px Inter, sans-serif; text-transform: uppercase; letter-spacing: .04em; color: var(--orange-deep); }
@@ -249,3 +250,37 @@ details.more summary { cursor: pointer; font-weight: 600; color: var(--green-dee
 body.turned #turn { display: flex; position: fixed; inset: 0; z-index: 9999; background: var(--night); color: var(--org);
   flex-direction: column; align-items: center; justify-content: center; gap: 14px; font: 800 22px Bricolage, sans-serif; text-align: center; }
 body.turned #turn svg { width: 54px; height: 54px; stroke: var(--org); fill: none; stroke-width: 2; }
+
+/* ---------- trips by year ---------- */
+.years { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0; }
+.ycard { aspect-ratio: 1; background: var(--card); border-radius: 16px; box-shadow: 0 2px 10px rgba(23,50,42,.06);
+  display: flex; flex-direction: column; justify-content: center; align-items: center; text-decoration: none; color: var(--ink); }
+.ycard b { font: 800 28px/1 Bricolage, Inter, sans-serif; color: var(--org); letter-spacing: -.02em; }
+.ycard span { margin-top: 6px; font-weight: 600; font-size: 14px; }
+.ycard small { font-size: 12.5px; color: var(--ink-soft); }
+
+/* ---------- photos ---------- */
+.phgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+.phgrid:empty { display: none; }
+.phthumb { position: relative; padding: 0; border: 0; border-radius: 10px; overflow: hidden; aspect-ratio: 1; background: var(--line); cursor: pointer; }
+.phthumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.phthumb .badge { position: absolute; left: 4px; bottom: 4px; font-size: 10.5px; padding: 2px 6px; }
+label.btn input[type=file] { display: none; }
+#viewer { position: fixed; inset: 0; z-index: 9998; background: #000; display: flex; align-items: center; justify-content: center; }
+#viewer img { max-width: 100vw; max-height: 100vh; object-fit: contain; }
+#viewer .vcap { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 16px calc(14px + var(--safe-b));
+  background: linear-gradient(0deg, rgba(0,0,0,.75), rgba(0,0,0,0)); color: #fff; display: flex; justify-content: space-between; align-items: end; gap: 10px; font-size: 14px; }
+#viewer .vcap b { font: 600 15px Inter, sans-serif; }
+#viewer .vcap span { color: #ccc; white-space: nowrap; }
+#viewer button { position: absolute; border: 0; background: rgba(0,0,0,.45); color: #fff; width: 44px; height: 44px; border-radius: 22px; font-size: 26px; line-height: 1; cursor: pointer; }
+#viewer .vclose { top: calc(12px + var(--safe-t)); right: 12px; font-size: 20px; }
+#viewer .vprev { left: 10px; top: 50%; transform: translateY(-50%); }
+#viewer .vnext { right: 10px; top: 50%; transform: translateY(-50%); }
+#viewer button[hidden] { display: none; }
+.legend i.ph { width: 8px; height: 8px; background: #1C6FD1; vertical-align: 0; }
+
+/* ---------- delete ---------- */
+.delzone { margin: 26px 0 10px; }
+.btn.danger { background: #B3261E; color: #fff; }
+.btn.ghost.danger { background: var(--card); color: #B3261E; border-color: #F0C9C5; width: 100%; }
+.banner.warn { background: #FDECEA; flex-wrap: wrap; }
