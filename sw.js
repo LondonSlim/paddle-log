@@ -1,6 +1,6 @@
 /* Water Log service worker: keeps the app itself on the phone so it opens with no signal.
  * Bump VERSION whenever app files change so phones pick up the new version. */
-const VERSION = 'wl-v9';
+const VERSION = 'wl-v10';
 const SHELL = [
   './', 'index.html', 'app.css', 'app.js', 'osgrid.js', 'home1.jpg', 'home2.jpg', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',

@@ -277,7 +277,11 @@ label.btn input[type=file] { display: none; }
 #viewer .vprev { left: 10px; top: 50%; transform: translateY(-50%); }
 #viewer .vnext { right: 10px; top: 50%; transform: translateY(-50%); }
 #viewer button[hidden] { display: none; }
-.legend i.ph { width: 8px; height: 8px; background: #1C6FD1; vertical-align: 0; }
+.legend i.ph { background: #1C6FD1; }
+.wl-photo { background: none; border: 0; }
+.wl-photo span { position: absolute; left: 50%; top: 50%; width: 24px; height: 24px; margin: -12px 0 0 -12px; border-radius: 50%;
+  background: #1C6FD1; border: 2.5px solid #fff; box-shadow: 0 1px 6px rgba(0,0,0,.45); display: grid; place-items: center; }
+.wl-photo svg { width: 13px; height: 13px; stroke: #fff; fill: none; stroke-width: 2.4; stroke-linejoin: round; }
 
 /* ---------- delete ---------- */
 .delzone { margin: 26px 0 10px; }

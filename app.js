@@ -734,21 +734,24 @@ function drawViewer() {
 window.stepViewer = d => { if (!VIEW) return; const j = VIEW.i + d; if (j < 0 || j >= VIEW.list.length) return; VIEW.i = j; drawViewer(); };
 window.closeViewer = () => { const v = $('#viewer'); if (v) v.remove(); VIEW = null; document.body.classList.remove('viewing'); checkTurn(); };
 
-// Small photo dots, only on the two most zoomed-in map levels
+// Photo markers: a blue camera dot, shown on the three most zoomed-in map levels.
+// Built as an HTML marker with a generous invisible tap area so it is easy to hit on a phone.
+const photoIcon = () => L.divIcon({ className: 'wl-photo', html: '<span><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>', iconSize: [40, 40], iconAnchor: [20, 20] });
 function addPhotoDots(map, list) {
   const pts = list.filter(p => p.lat != null && p.lon != null && isFinite(p.lat) && isFinite(p.lon));
   if (!pts.length) return;
   const group = L.layerGroup();
   pts.forEach(p => {
-    const m = L.circleMarker([p.lat, p.lon], { radius: 5, color: '#fff', weight: 1.5, fillColor: '#1C6FD1', fillOpacity: 1 });
-    m.on('click', () => {
+    const m = L.marker([p.lat, p.lon], { icon: photoIcon(), zIndexOffset: 1000, keyboard: false, title: tripLabel(p) });
+    m.on('click', ev => {
+      if (ev && ev.originalEvent) L.DomEvent.stop(ev.originalEvent);
       const same = pts.filter(q => q.date === p.date && q.river === p.river)
         .map(q => Object.assign({}, q, { full: photoUrl(q.id, 1600) }));
-      openViewer(same, same.findIndex(q => q.id === p.id));
+      openViewer(same, Math.max(0, same.findIndex(q => q.id === p.id)));
     });
     group.addLayer(m);
   });
-  const show = () => { const on = map.getZoom() >= map.getMaxZoom() - 1; if (on && !map.hasLayer(group)) group.addTo(map); if (!on && map.hasLayer(group)) map.removeLayer(group); };
+  const show = () => { const on = map.getZoom() >= map.getMaxZoom() - 2; if (on && !map.hasLayer(group)) group.addTo(map); if (!on && map.hasLayer(group)) map.removeLayer(group); };
   map.on('zoomend', show); show();
 }
 
