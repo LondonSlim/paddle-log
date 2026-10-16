@@ -288,3 +288,10 @@ label.btn input[type=file] { display: none; }
 .btn.danger { background: #B3261E; color: #fff; }
 .btn.ghost.danger { background: var(--card); color: #B3261E; border-color: #F0C9C5; width: 100%; }
 .banner.warn { background: #FDECEA; flex-wrap: wrap; }
+
+/* drag and drop photos (computer) */
+.droptip { display: none; margin: 8px 0 0; font-size: 13px; }
+@media (hover: hover) and (pointer: fine) { .droptip { display: block; } }
+body.dropping::after { content: 'Drop photos to add them to this trip'; position: fixed; inset: 10px; z-index: 9990;
+  border: 3px dashed var(--org); border-radius: 20px; background: rgba(255,248,241,.92); display: grid; place-items: center;
+  font: 800 22px Bricolage, Inter, sans-serif; color: var(--ink); pointer-events: none; }

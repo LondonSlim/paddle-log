@@ -653,6 +653,7 @@ function photoSection(e) {
   return `<h2>Photos</h2><div class="card">
     ${n ? `<button class="btn small" onclick="showPhotos('${id}')">Show photos (${n})</button>` : '<span class="muted">No photos yet</span>'}
     <div class="btnrow">${add}</div>
+    ${add && e.row ? '<p class="muted droptip">On a computer you can also drag photos from a folder onto this page.</p>' : ''}
     <div class="phgrid" id="phGrid"></div></div>`;
 }
 
@@ -688,9 +689,15 @@ async function preparePhoto(file) {
   } finally { URL.revokeObjectURL(url); }
 }
 
-window.addPhotos = async function (input, id) {
-  const e = findEntry(id); const files = Array.from(input.files || []); input.value = '';
-  if (!e || !e.row || !files.length) return;
+window.addPhotos = function (input, id) {
+  const files = Array.from(input.files || []); input.value = '';
+  addPhotoFiles(files, id);
+};
+async function addPhotoFiles(files, id) {
+  files = files.filter(f => /^image\//.test(f.type) || /\.(jpe?g|png|heic|heif|webp)$/i.test(f.name || ''));
+  const e = findEntry(id);
+  if (!e || !e.row) { toast('Open a saved trip first, then add photos'); return; }
+  if (!files.length) { toast('No photos found in what was dropped'); return; }
   const room = MAX_PHOTOS - tripPhotos(e).length;
   if (room <= 0) { toast('This trip already has ' + MAX_PHOTOS + ' photos'); return; }
   if (files.length > room) toast('Only ' + room + ' more will fit – adding the first ' + room);
@@ -705,7 +712,24 @@ window.addPhotos = async function (input, id) {
   if (!store.set(LS.queue, S.queue)) toast('Phone storage full – keep the app open until the photos have sent');
   updateDot(); render(); showPhotos(id);
   if (navigator.onLine) flush(); else toast('Photos saved on phone – will send when you have signal');
-};
+}
+
+// On a computer: drag photos from a folder onto an open trip page
+(function () {
+  const tripId = () => { const m = location.hash.match(/^#trip\/(.+)$/); return m ? decodeURIComponent(m[1]) : null; };
+  const hasFiles = ev => ev.dataTransfer && Array.from(ev.dataTransfer.types || []).includes('Files');
+  let depth = 0;
+  window.addEventListener('dragenter', ev => { if (!hasFiles(ev) || !tripId()) return; depth++; document.body.classList.add('dropping'); });
+  window.addEventListener('dragleave', ev => { if (!hasFiles(ev)) return; depth = Math.max(0, depth - 1); if (!depth) document.body.classList.remove('dropping'); });
+  window.addEventListener('dragover', ev => { if (hasFiles(ev)) { ev.preventDefault(); ev.dataTransfer.dropEffect = tripId() ? 'copy' : 'none'; } });
+  window.addEventListener('drop', ev => {
+    if (!hasFiles(ev)) return;
+    ev.preventDefault(); depth = 0; document.body.classList.remove('dropping');
+    const id = tripId();
+    if (!id) { toast('Open a trip first, then drop its photos on it'); return; }
+    addPhotoFiles(Array.from(ev.dataTransfer.files || []), id);
+  });
+})();
 
 // Full-screen photo viewer: swipe or tap the arrows; turning the phone sideways is allowed here
 let VIEW = null;
