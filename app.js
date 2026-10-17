@@ -153,11 +153,34 @@ async function refresh(quiet) {
   } catch (e) {
     S.lastError = e.server ? e.message : '';
     if (!quiet) toast(e.server ? e.message : 'No signal – showing saved copy');
-    return;
+    return false;
   }
   // don't redraw a form you're typing into
   if (/^#(addc?|edit|place)\b/.test(location.hash)) updateDot(); else render();
+  return true;
 }
+
+// Buttons that say what they are doing, then leave the result on the page
+const hhmm = () => new Date().toTimeString().slice(0, 5);
+window.refreshNow = async function (btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking your sheet…'; }
+  const ok = await refresh(true);
+  S.status = ok ? `Up to date at ${hhmm()} – ${S.data.entries.length} trips, ${(S.data.photos || []).length} photos`
+    : S.lastError ? 'Your sheet replied: ' + S.lastError : "Couldn't reach your sheet – check your signal and try again";
+  render();
+};
+window.sendNow = async function (btn) {
+  const n = S.queue.length;
+  if (!n) { S.status = 'Nothing waiting to send'; render(); return; }
+  if (btn) { btn.disabled = true; btn.textContent = `Sending ${n} ${n === 1 ? 'change' : 'changes'}…`; }
+  for (let i = 0; S.syncing && i < 120; i++) await new Promise(r => setTimeout(r, 500)); // a send already under way
+  await flush();
+  const err = S.queue.find(q => q.error);
+  S.status = !S.queue.length ? `All sent at ${hhmm()}`
+    : err ? 'Not sent – your sheet replied: ' + err.error + '. Tap Discard to drop it.'
+    : `${S.queue.length} still waiting – couldn't reach your sheet. It will try again when you have signal.`;
+  render();
+};
 
 function saveQueue() { store.set(LS.queue, S.queue); updateDot(); }
 
@@ -175,6 +198,7 @@ async function flush() {
         else if (q.kind === 'candidate') await api('candidate', { id: q.id, status: q.status });
         else if (q.kind === 'photo') await api('addphoto', { trip: q.trip, photo: q.photo, uid: q.uid });
         else if (q.kind === 'delete') await api('delete', { row: q.row, expect: q.expect, uid: q.uid });
+        else if (q.kind === 'delphoto') await api('deletephoto', { id: q.id, uid: q.uid });
         S.queue.shift(); sent++; saveQueue();
       } catch (e) {
         if (e.server && (q.kind === 'update' || q.kind === 'delete') && /moved/i.test(e.message) && !q.relocated && await relocate(q)) continue;
@@ -242,8 +266,8 @@ window.go = go;
 function syncBanner() {
   if (!S.queue.length) return '';
   const err = S.queue.find(q => q.error);
-  return `<div class="banner ${err ? '' : 'green'}"><div class="grow">${S.queue.length} waiting to send${err ? ' – ' + esc(err.error) : ''}</div>
-    <button class="btn small" onclick="flush()">Send now</button>
+  return `<div class="banner ${err ? '' : 'green'}"><div class="grow">${S.queue.length} waiting to send${err ? ' – ' + esc(err.error) : ''}${S.status ? `<br><small>${esc(S.status)}</small>` : ''}</div>
+    <button class="btn small" onclick="sendNow(this)">Send now</button>
     ${err ? '<button class="btn small ghost" onclick="dropStuck()">Discard</button>' : ''}</div>`;
 }
 window.flush = flush;
@@ -321,8 +345,9 @@ function screenSetup(msg) {
         <dt>Paddles saved</dt><dd>${S.data ? S.data.entries.length : 0}</dd>
         <dt>Last updated</dt><dd>${S.data ? fmtDate(new Date(S.data.loadedAt)) + ' ' + new Date(S.data.loadedAt).toTimeString().slice(0, 5) : '–'}</dd>
         <dt>Waiting to send</dt><dd>${S.queue.length}</dd></div>
-        <div class="btnrow"><button class="btn small ghost" onclick="refresh()">${ICON.refresh} Refresh now</button>
-        ${S.queue.length ? '<button class="btn small" onclick="flush()">Send now</button>' : ''}</div></div>` : ''}
+        <div class="btnrow"><button class="btn small ghost" onclick="refreshNow(this)">${ICON.refresh} Refresh now</button>
+        ${S.queue.length ? '<button class="btn small" onclick="sendNow(this)">Send now</button>' : ''}</div>
+        ${S.status ? `<p class="status">${esc(S.status)}</p>` : ''}</div>` : ''}
   </div>`;
 }
 window.pasteSetup = async function () {
@@ -396,7 +421,7 @@ function afterMap() {
     };
   });
   const map = makeMap(el, pts, { maxZoom: 8 });
-  if (map) addPhotoDots(map, (S.data && S.data.photos) || []);
+  if (map) addPhotoDots(map, livePhotos());
 }
 
 // Trips: one card per year; tap a year for its trips. Searching looks across all years.
@@ -436,16 +461,19 @@ window.filterTrips = function () {
 };
 
 function screenBuddies() {
-  const b = buddyCounts(entries());
+  const sort = store.get('wl_budsort', 'most');
   return topbar('Paddling buddies', 'home') + `<div class="wrap">
     <input class="search" id="bq" placeholder="Search names" oninput="filterBuddies()">
-    <ul class="list" id="budList">${budRows(b)}</ul></div>`;
+    <div class="seg"><button class="${sort === 'most' ? 'on' : ''}" onclick="setBudSort('most')">Most trips</button><button class="${sort === 'az' ? 'on' : ''}" onclick="setBudSort('az')">A–Z</button></div>
+    <ul class="list" id="budList">${budRows(sortBuddies(buddyCounts(entries())))}</ul></div>`;
 }
+const sortBuddies = b => store.get('wl_budsort', 'most') === 'az' ? b.slice().sort((x, y) => x[0].localeCompare(y[0])) : b;
+window.setBudSort = k => { store.set('wl_budsort', k); const q = $('#bq') && $('#bq').value; render(); if (q) { $('#bq').value = q; filterBuddies(); } };
 const budRows = b => b.map(([n, c]) => `<li><a class="row" href="#buddy/${enc(n)}"><div class="grow"><div class="t">${esc(n)}</div></div>
   <span class="badge">${c} ${c === 1 ? 'trip' : 'trips'}</span>${ICON.chev}</a></li>`).join('');
 window.filterBuddies = function () {
   const q = $('#bq').value.toLowerCase();
-  $('#budList').innerHTML = budRows(buddyCounts(entries()).filter(([n]) => n.toLowerCase().includes(q)));
+  $('#budList').innerHTML = budRows(sortBuddies(buddyCounts(entries())).filter(([n]) => n.toLowerCase().includes(q)));
 };
 function screenBuddy(name) {
   const list = entries().filter(e => splitNames(e.paddlers).includes(name));
@@ -626,18 +654,23 @@ function afterRiver(name) {
     popup: `<b>${esc(p.name)}</b><br>${esc(p.use)}${dirLink(p) ? `<br><a href="${dirLink(p)}" target="_blank" rel="noopener">Directions</a>` : ''}`
   }));
   const map = makeMap(el, pts, { big: true, maxZoom: 15, zoom: 14 });
-  if (map) addPhotoDots(map, ((S.data && S.data.photos) || []).filter(p => (p.river || '').trim() === name));
+  if (map) addPhotoDots(map, livePhotos().filter(p => (p.river || '').trim() === name));
 }
 
 /* ---------- photos ---------- */
 
 const MAX_PHOTOS = 5;
 const photoUrl = (id, w) => 'https://lh3.googleusercontent.com/d/' + id + '=w' + w;
+// Photos in the sheet, less any waiting on the phone to be deleted
+const livePhotos = () => {
+  const gone = new Set(S.queue.filter(q => q.kind === 'delphoto').map(q => q.id));
+  return ((S.data && S.data.photos) || []).filter(p => !gone.has(p.id));
+};
 const tripLabel = t => [t.river, t.section, fmtDate(parseDate(t.date))].filter(Boolean).join(' · ');
 
 // Photos for a trip: those in the sheet plus any waiting on the phone
 function tripPhotos(e) {
-  const saved = ((S.data && S.data.photos) || []).filter(p => p.date === e.date && p.river === e.river)
+  const saved = livePhotos().filter(p => p.date === e.date && p.river === e.river)
     .map(p => Object.assign({}, p, { thumb: photoUrl(p.id, 400), full: photoUrl(p.id, 1600) }));
   const waiting = S.queue.filter(q => q.kind === 'photo' && q.trip.date === e.date && q.trip.river === e.river)
     .map(q => Object.assign({}, q.trip, { taken: q.photo.taken, lat: q.photo.lat, lon: q.photo.lon,
@@ -735,13 +768,16 @@ async function addPhotoFiles(files, id) {
 let VIEW = null;
 function openViewer(list, i) {
   if (!list.length) return;
-  VIEW = { list, i: Math.max(0, Math.min(i, list.length - 1)) };
+  VIEW = { list, i: Math.max(0, Math.min(i, list.length - 1)), hash: location.hash };
   let v = $('#viewer');
   if (!v) {
     v = document.createElement('div'); v.id = 'viewer';
     v.innerHTML = `<img alt=""><button class="vclose" onclick="closeViewer()" aria-label="Close">✕</button>
       <button class="vprev" onclick="stepViewer(-1)" aria-label="Previous">‹</button><button class="vnext" onclick="stepViewer(1)" aria-label="Next">›</button>
-      <div class="vcap"></div>`;
+      <div class="vcap"></div>
+      <button class="vbin" onclick="askDelPhoto()" aria-label="Delete photo">${ICON.bin}</button>
+      <div class="vask" hidden><div><b>Delete this photo?</b><br>It goes to the bin in your Google Drive.</div>
+        <div class="btnrow"><button class="btn small danger" onclick="delPhoto()">Delete</button><button class="btn small ghost" onclick="keepPhoto()">Keep</button></div></div>`;
     let x0 = null;
     v.addEventListener('touchstart', ev => { x0 = ev.touches[0].clientX; }, { passive: true });
     v.addEventListener('touchend', ev => { if (x0 == null) return; const dx = ev.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 50) stepViewer(dx < 0 ? 1 : -1); });
@@ -753,9 +789,21 @@ function drawViewer() {
   const v = $('#viewer'), p = VIEW.list[VIEW.i];
   v.querySelector('img').src = p.full;
   v.querySelector('.vcap').innerHTML = `<b>${esc(tripLabel(p))}</b>${VIEW.list.length > 1 ? `<span>${VIEW.i + 1} of ${VIEW.list.length}</span>` : ''}`;
+  v.querySelector('.vbin').hidden = !p.id; v.querySelector('.vask').hidden = true;
   v.querySelector('.vprev').hidden = VIEW.i === 0; v.querySelector('.vnext').hidden = VIEW.i >= VIEW.list.length - 1;
 }
 window.stepViewer = d => { if (!VIEW) return; const j = VIEW.i + d; if (j < 0 || j >= VIEW.list.length) return; VIEW.i = j; drawViewer(); };
+window.askDelPhoto = () => { $('#viewer .vask').hidden = false; };
+window.keepPhoto = () => { $('#viewer .vask').hidden = true; };
+window.delPhoto = function () {
+  const p = VIEW && VIEW.list[VIEW.i]; if (!p || !p.id) return;
+  enqueue({ kind: 'delphoto', id: p.id });
+  toast('Photo deleted');
+  VIEW.list.splice(VIEW.i, 1);
+  if (!VIEW.list.length) { closeViewer(); render(); return; }
+  VIEW.i = Math.min(VIEW.i, VIEW.list.length - 1); drawViewer();
+  const m = location.hash.match(/^#trip\/(.+)$/); if (m) { render(); showPhotos(decodeURIComponent(m[1])); }
+};
 window.closeViewer = () => { const v = $('#viewer'); if (v) v.remove(); VIEW = null; document.body.classList.remove('viewing'); checkTurn(); };
 
 // Photo markers: a blue camera dot, shown on the three most zoomed-in map levels.
@@ -947,6 +995,26 @@ function placeField(which, label, value) {
     </div>`;
 }
 
+// Date picker as three plain drop-downs – quicker than the iPhone calendar for old trips
+function dateSelects(iso) {
+  const [y, m, d] = String(iso || isoDate(new Date())).split('-').map(Number);
+  const now = new Date().getFullYear();
+  const opt = (v, t, sel) => `<option value="${v}"${v === sel ? ' selected' : ''}>${t}</option>`;
+  const days = Array.from({ length: 31 }, (_, i) => opt(i + 1, i + 1, d)).join('');
+  const months = MONTHS.map((t, i) => opt(i + 1, t, m)).join('');
+  const years = Array.from({ length: now - 1999 + 1 }, (_, i) => now + 1 - i).map(yy => opt(yy, yy, y)).join('');
+  return `<label>Date</label><div class="dmy">
+    <select id="f_dd" onchange="syncDate()" aria-label="Day">${days}</select>
+    <select id="f_mm" onchange="syncDate()" aria-label="Month">${months}</select>
+    <select id="f_yy" onchange="syncDate()" aria-label="Year">${years}</select></div>
+    <input type="hidden" id="f_date" value="${esc(iso || isoDate(new Date()))}">`;
+}
+window.syncDate = function () {
+  const y = +$('#f_yy').value, m = +$('#f_mm').value, last = new Date(y, m, 0).getDate();
+  if (+$('#f_dd').value > last) $('#f_dd').value = last; // e.g. 31 June becomes 30 June
+  $('#f_date').value = y + '-' + String(m).padStart(2, '0') + '-' + String($('#f_dd').value).padStart(2, '0');
+};
+
 function screenForm(id, candId) {
   const editing = id != null;
   let e = {};
@@ -960,7 +1028,7 @@ function screenForm(id, candId) {
     editing ? Object.assign({}, e, { date: e._d ? isoDate(e._d) : '' }) : {},
     cand ? { date: cand._d ? isoDate(cand._d) : '', river: String(cand.river || '').split(' / ')[0] } : {});
   FORM.id = id; FORM.cand = cand ? cand.id : null; FORM.river = v.river || ''; FORM.np = { in: {}, out: {} };
-  FORM.paddlers = splitNames(v.paddlers);
+  FORM.paddlers = splitNames(v.paddlers); FORM.askNames = [];
   const ents = entries();
   const rivers = Array.from(new Set(ents.map(x => x.river).filter(Boolean))).sort();
   const crafts = Array.from(new Set(['Canoe', 'Kayak', 'Sea kayak', 'SUP'].concat(ents.map(x => x.craft).filter(Boolean))));
@@ -981,8 +1049,8 @@ function screenForm(id, candId) {
   return topbar(editing ? 'Edit paddle' : 'Log a paddle', editing ? 'trip/' + id : (cand ? 'cand/' + cand.id : 'home')) + `<div class="wrap form" id="paddleForm">
     ${!editing && draft ? '<div class="banner"><div class="grow">Carrying on from an unsaved draft.</div><button class="btn small ghost" onclick="clearDraft()">Start fresh</button></div>' : ''}
     ${cand ? `<div class="banner green"><div class="grow">From ${esc(cand.cal || cand.folder || 'your photos')}. Check the date and river.</div></div>` : ''}
-    <div class="grid2"><div>${f('date', 'Date', '', 'date')}</div>
-      <div><label>Craft</label><input id="f_craft" list="dl_crafts" value="${esc(v.craft || '')}"></div></div>
+    ${dateSelects(v.date)}
+    <label>Craft</label><input id="f_craft" list="dl_crafts" value="${esc(v.craft || '')}">
     <label>River / water</label><input id="f_river" list="dl_rivers" value="${esc(v.river || '')}" onchange="riverChanged()" autocomplete="off">
     <label>Section</label><input id="f_section" list="dl_sections" value="${esc(v.section || '')}" autocomplete="off">
     ${placeField('in', 'Put in', v.putInPlace)}
@@ -991,6 +1059,7 @@ function screenForm(id, candId) {
     <div class="chips" id="padChips"></div>
     <input id="f_padIn" list="dl_buddies" placeholder="Add a name, then tap Add" onkeydown="if(event.key==='Enter'||event.key===','){event.preventDefault();addPaddler()}">
     <div class="btnrow"><button type="button" class="btn small ghost" onclick="addPaddler()">Add</button></div>
+    <div class="padask" id="padAsk" hidden></div>
     <div class="chips" id="padSuggest"></div>
     ${full ? more : `<details class="more"><summary>More details (or finish later)</summary>${more}</details>`}
     <div class="btnrow" style="margin-top:22px"><button class="btn block" onclick="submitForm()">${editing ? 'Save changes' : 'Save paddle'}</button></div>
@@ -1037,10 +1106,47 @@ function drawPaddlers() {
 }
 window.addPaddler = function (n) {
   const inp = $('#f_padIn');
-  const names = n ? [n] : splitNames(inp.value);
-  names.forEach(x => { if (!FORM.paddlers.includes(x)) FORM.paddlers.push(x); });
-  if (!n) inp.value = '';
+  if (n) { if (!FORM.paddlers.includes(n)) FORM.paddlers.push(n); drawPaddlers(); return; } // tapped a known name
+  const typed = splitNames(inp.value); inp.value = '';
+  FORM.askNames = (FORM.askNames || []).concat(typed);
+  nextNameCheck();
+};
+// Names already in the log that might be the same person as a typed name
+function similarNames(x) {
+  const known = buddyCounts(entries()), lx = x.toLowerCase(), first = lx.split(/\s+/)[0];
+  const lev = (a, b) => { const d = Array.from({ length: b.length + 1 }, (_, i) => i); for (let i = 1; i <= a.length; i++) { let p = d[0]; d[0] = i; for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, p + (a[i - 1] === b[j - 1] ? 0 : 1)); p = t; } } return d[b.length]; };
+  return known.map(([n, c]) => [n, c, n.toLowerCase()]).filter(([n, c, ln]) => ln !== lx && (
+    ln.split(/\s+/)[0] === first ||                                  // same first name: Mark / Mark Stanford
+    (first.length >= 2 && ln.startsWith(first)) ||                     // short form: Al / Alistair
+    (lx.length >= 5 && lev(ln, lx) <= (lx.length >= 8 ? 2 : 1))         // spelling slip: Kryzstof / Kryzsztof
+  )).sort((a, b) => b[1] - a[1]).slice(0, 6).map(r => r[0]);
+}
+function nextNameCheck() {
+  const box = $('#padAsk');
+  while (FORM.askNames && FORM.askNames.length) {
+    let x = FORM.askNames[0];
+    const exact = buddyCounts(entries()).find(([n]) => n.toLowerCase() === x.toLowerCase());
+    if (exact) x = exact[0];
+    const sim = similarNames(x).filter(n => !FORM.paddlers.includes(n));
+    const singleWord = !/\s/.test(x);
+    // ask if it's a new name that looks like someone already logged, or a first name only when fuller names exist
+    if (sim.length && (!exact || singleWord)) {
+      box.hidden = false;
+      box.innerHTML = `<div class="muted">${exact ? `Which ${esc(x)}?` : `“${esc(x)}” isn't in your log yet. Did you mean:`}</div>
+        <div class="chips">${sim.map(n => `<button type="button" class="chip" onclick="pickName(${esc(JSON.stringify(n))})">${esc(n)}</button>`).join('')}
+        <button type="button" class="chip keep" onclick="pickName(${esc(JSON.stringify(x))})">${exact ? 'Just' : 'Keep'} “${esc(x)}”</button></div>`;
+      return;
+    }
+    FORM.askNames.shift();
+    if (!FORM.paddlers.includes(x)) FORM.paddlers.push(x);
+  }
+  if (box) { box.hidden = true; box.innerHTML = ''; }
   drawPaddlers();
+}
+window.pickName = function (n) {
+  FORM.askNames.shift();
+  if (!FORM.paddlers.includes(n)) FORM.paddlers.push(n);
+  drawPaddlers(); nextNameCheck();
 };
 window.removePaddler = function (i) { FORM.paddlers.splice(i, 1); drawPaddlers(); };
 
@@ -1218,7 +1324,8 @@ function render() {
     place: [screenPlace, afterPlace], setup: [screenSetup], map: [screenMap, afterMap],
     review: [screenReview], cand: [screenCand], addc: [a => screenForm(null, a), afterForm]
   };
-  if (VIEW) closeViewer();
+  if (VIEW && VIEW.hash !== location.hash) closeViewer();
+  if (S.statusRoute !== location.hash) { S.status = ''; S.statusRoute = location.hash; }
   const [scr, after] = screens[route] || screens.home;
   app.innerHTML = scr(route === 'add' ? undefined : arg);
   if (after) after(arg);

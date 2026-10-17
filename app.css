@@ -295,3 +295,24 @@ label.btn input[type=file] { display: none; }
 body.dropping::after { content: 'Drop photos to add them to this trip'; position: fixed; inset: 10px; z-index: 9990;
   border: 3px dashed var(--org); border-radius: 20px; background: rgba(255,248,241,.92); display: grid; place-items: center;
   font: 800 22px Bricolage, Inter, sans-serif; color: var(--ink); pointer-events: none; }
+
+/* date as three drop-downs */
+.dmy { display: grid; grid-template-columns: 1fr 1.2fr 1.3fr; gap: 8px; }
+.form .dmy select { padding-right: 6px; }
+
+/* status line under Refresh / Send */
+.status { margin: 10px 0 0; font-size: 14px; font-weight: 600; color: var(--green-deep); }
+
+/* "did you mean" names */
+.padask { margin: 8px 0; padding: 10px 12px; border-radius: 12px; background: var(--orange-soft); }
+.padask .chips { margin-bottom: 0; }
+.chip.keep { background: var(--card); border-style: dashed; }
+
+/* delete a photo */
+#viewer .vbin { top: calc(12px + var(--safe-t)); left: 12px; display: grid; place-items: center; }
+#viewer .vbin svg { width: 20px; height: 20px; stroke: #fff; fill: none; stroke-width: 2; }
+#viewer .vask { position: absolute; left: 12px; right: 12px; top: calc(64px + var(--safe-t)); background: #fff; color: var(--ink);
+  border-radius: 14px; padding: 12px 14px; font-size: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.4); }
+#viewer .vask .btn { position: static; width: auto; height: auto; border-radius: 10px; font-size: 14px; }
+#viewer .vask .btn.ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
+#viewer .vask .btn.danger { background: #B3261E; color: #fff; }
