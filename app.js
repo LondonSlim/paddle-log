@@ -333,7 +333,7 @@ function makeMap(el, pts, opts) {
   const ll = [];
   pts.forEach(p => {
     if (p.lat == null || p.lon == null) return;
-    const c = pinColour();
+    const c = pinColour(p.use);
     const m = p.n
       ? L.marker([p.lat, p.lon], { icon: L.divIcon({ className: 'wl-num', html: `<span class="seq">${p.n}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(map)
       : L.circleMarker([p.lat, p.lon], { radius: opts.big ? 9 : 7, color: c.line, weight: 3, fillColor: c.fill, fillOpacity: .95 }).addTo(map);
@@ -647,7 +647,7 @@ function screenRiver(name) {
     <div class="legend"><span><i style="background:#6DB33F"></i>Access point</span><span><i class="ph"></i>Photo</span></div>
     <h2>Access points</h2>
     ${ps.length ? `<div class="updown">Top of the river first, worked out from your trips. Tap a place for details.</div>
-      <div class="places">${ps.map(placeRow).join('')}</div>` : '<div class="empty">No access points saved yet</div>'}
+      <div class="places">${ps.map(placeRow).join('')}</div>` : '<div class="empty">No places saved yet</div>'}
     ${Object.keys(gauges).length ? `<h2>Gauges</h2><div class="card">${Object.keys(gauges).map(g =>
       `<div class="row" style="box-shadow:none;margin:0;padding:8px 0;cursor:default"><div class="grow"><div class="t">${esc(g)}</div>
         <div class="s">${gauges[g]} ${gauges[g] === 1 ? 'reading' : 'readings'}${(S.data.gauges || {})[g] ? '' : ' · link searches the web'}</div></div>
@@ -1226,7 +1226,7 @@ window.pickOnMap = function (w) {
   setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
   if (FORM['map_' + w]) { FORM['map_' + w].invalidateSize(); return; }
   const near = places().filter(p => p.river === FORM.river && p.latN != null);
-  const map = makeMap(el, near.map(p => ({ lat: p.latN, lon: p.lonN, popup: esc(p.name) })), { maxZoom: 14 });
+  const map = makeMap(el, near.map(p => ({ lat: p.latN, lon: p.lonN, use: p.use, popup: esc(p.name) })), { maxZoom: 14 });
   if (!map) return;
   FORM['map_' + w] = map;
   toast('Tap the map where the place is');
@@ -1305,7 +1305,7 @@ window.submitForm = function () {
 
 function screenPlace(name) {
   const p = placeByName()[name];
-  if (!p) return topbar('Access point', 'home') + '<div class="wrap empty">Access point not found – it may have been renamed. Go back and try again.</div>';
+  if (!p) return topbar('Place', 'home') + '<div class="wrap empty">Place not found</div>';
   const usedOn = entries().filter(e => e.putInPlace === name || e.takeOutPlace === name);
   FORM.place = { name, lat: p.latN, lon: p.lonN };
   const gs = Array.from(new Set(riverGauges(p.river).concat(Object.keys(gaugeInfo())))).sort();
@@ -1329,7 +1329,7 @@ function screenPlace(name) {
 }
 function afterPlace(name) {
   const p = placeByName()[name]; const el = $('#placeMap'); if (!el || !p) return;
-  const map = makeMap(el, p.latN != null ? [] : places().filter(x => x.river === p.river && x.latN != null).map(x => ({ lat: x.latN, lon: x.lonN, popup: esc(x.name) })), { big: true, zoom: 15, maxZoom: 13 });
+  const map = makeMap(el, p.latN != null ? [] : places().filter(x => x.river === p.river && x.latN != null).map(x => ({ lat: x.latN, lon: x.lonN, use: x.use, popup: esc(x.name) })), { big: true, zoom: 15, maxZoom: 13 });
   if (!map) return;
   if (p.latN != null) map.setView([p.latN, p.lonN], 15);
   FORM.placeMap = map; FORM.placeMarker = p.latN != null ? L.marker([p.latN, p.lonN], { icon: pinIcon() }).addTo(map) : null;
