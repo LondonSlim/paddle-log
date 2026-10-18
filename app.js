@@ -70,6 +70,13 @@ function entries() {
   const dels = new Set(S.queue.filter(q => q.kind === 'delete').map(q => String(q.row)));
   const all = base.filter(e => !dels.has(String(e.row))).map(e => updates[e.row] ? Object.assign({}, e, updates[e.row].paddle, { date: ukDate(updates[e.row].paddle.date), row: e.row, pendingUid: updates[e.row].uid }) : e)
     .concat(pending);
+  // access points renamed on the phone but not yet sent
+  const renames = S.queue.filter(q => q.kind === 'place' && q.fields && q.fields.name && q.fields.name !== q.name);
+  if (renames.length) all.forEach((e, i) => {
+    let a = e.putInPlace, b = e.takeOutPlace;
+    renames.forEach(q => { if (a === q.name) a = q.fields.name; if (b === q.name) b = q.fields.name; });
+    if (a !== e.putInPlace || b !== e.takeOutPlace) all[i] = Object.assign({}, e, { putInPlace: a, takeOutPlace: b });
+  });
   all.forEach(e => { e._d = parseDate(e.date); });
   return all.sort((a, b) => (b._d || 0) - (a._d || 0) || String(b.start).localeCompare(String(a.start)));
 }
@@ -126,6 +133,18 @@ const w3wLink = w => 'https://what3words.com/' + String(w).replace(/^\/+/, '');
 function gaugeLink(name) {
   const g = (S.data && S.data.gauges) || {};
   return g[name] || ('https://www.google.com/search?q=' + enc(name + ' river level gauge'));
+}
+// Gauges the sheet can read automatically (England, Scotland, France)
+const gaugeInfo = () => (S.data && S.data.gaugeInfo) || {};
+const autoGauge = g => String(g || '').split('/').map(x => x.trim()).filter(Boolean).some(x => (gaugeInfo()[x] || {}).auto);
+
+// "Now" to five minutes: up to a minute past a five-minute mark rounds down, after that rounds up (12:00:20 → 12:00, 12:01:01 → 12:05)
+function roundNow(d) {
+  d = d || new Date();
+  const secs = d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
+  const block = 300, into = secs % block;
+  const t = (into < 60 ? secs - into : secs - into + block) % 86400;
+  return String(Math.floor(t / 3600)).padStart(2, '0') + ':' + String(Math.floor(t % 3600 / 60)).padStart(2, '0');
 }
 
 /* ================= API & sync ================= */
@@ -298,9 +317,8 @@ function tileLayer() {
   });
 }
 
-function pinColour(use) {
-  if (use === 'Take out') return { fill: '#F4A261', line: '#C96A2B' };
-  if (use === 'Both') return { fill: '#6DB33F', line: '#C96A2B' };
+// Every access point looks the same: you choose on each trip which one you put in or took out at
+function pinColour() {
   return { fill: '#6DB33F', line: '#3F7A22' };
 }
 
@@ -315,9 +333,9 @@ function makeMap(el, pts, opts) {
   const ll = [];
   pts.forEach(p => {
     if (p.lat == null || p.lon == null) return;
-    const c = pinColour(p.use);
+    const c = pinColour();
     const m = p.n
-      ? L.marker([p.lat, p.lon], { icon: L.divIcon({ className: 'wl-num', html: `<span class="seq ${p.use === 'Take out' ? 'out' : p.use === 'Both' ? 'both' : ''}">${p.n}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(map)
+      ? L.marker([p.lat, p.lon], { icon: L.divIcon({ className: 'wl-num', html: `<span class="seq">${p.n}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(map)
       : L.circleMarker([p.lat, p.lon], { radius: opts.big ? 9 : 7, color: c.line, weight: 3, fillColor: c.fill, fillOpacity: .95 }).addTo(map);
     if (p.popup) m.bindPopup(p.popup);
     ll.push([p.lat, p.lon]);
@@ -408,7 +426,7 @@ function riversByPlace() {
 }
 function screenMap() {
   return topbar('Map', '') + `<div class="wrap">
-    <div class="legend" style="margin-top:12px"><span><i style="background:#6DB33F"></i>Get in</span><span><i class="out"></i>Take out</span><span><i class="both"></i>Both</span><span><i class="ph"></i>Photo</span></div>
+    <div class="legend" style="margin-top:12px"><span><i style="background:#6DB33F"></i>Access point</span><span><i class="ph"></i>Photo</span></div>
     <div class="mapfull" id="allMap"></div></div>`;
 }
 function afterMap() {
@@ -418,8 +436,8 @@ function afterMap() {
     const rivs = Array.from(rb[p.name] || [p.river]).filter(Boolean);
     const d = dirLink(p);
     return {
-      lat: p.latN, lon: p.lonN, use: p.use,
-      popup: `<b>${esc(p.name)}</b><br>${esc(p.use || '')}<br>${rivs.map(r => `<a href="#river/${enc(r)}">${esc(r)}</a>`).join(' · ')}` +
+      lat: p.latN, lon: p.lonN,
+      popup: `<b>${esc(p.name)}</b><br>${rivs.map(r => `<a href="#river/${enc(r)}">${esc(r)}</a>`).join(' · ')}` +
         (d ? `<br><a href="${d}" target="_blank" rel="noopener">Directions</a>` : '')
     };
   });
@@ -519,8 +537,7 @@ function riverPlaces(river, list) {
   places().forEach(p => { if (p.river === river && !used[p.name]) used[p.name] = { kinds: new Set(), count: 0 }; });
   const out = Object.entries(used).map(([n, u]) => {
     const p = pm[n] || { name: n };
-    const use = p.use || (u.kinds.size === 2 ? 'Both' : u.kinds.has('out') ? 'Take out' : 'Get in');
-    return Object.assign({}, p, { use, count: u.count, last: u.last });
+    return Object.assign({}, p, { count: u.count, last: u.last });
   });
   return flowOrder(out, list);
 }
@@ -563,8 +580,7 @@ function flowOrder(ps, list) {
   };
   ps.forEach((p, i) => effOf(i));
   const num = v => v === Infinity ? 1e12 : v;
-  const cmp = (a, b) => (num(eff[a]) - num(eff[b])) || (num(sc[a]) - num(sc[b])) ||
-    (ps[a].use === 'Take out') - (ps[b].use === 'Take out') || ps[a].name.localeCompare(ps[b].name);
+  const cmp = (a, b) => (num(eff[a]) - num(eff[b])) || (num(sc[a]) - num(sc[b])) || ps[a].name.localeCompare(ps[b].name);
   const done = Array(n).fill(false), order = [];
   while (order.length < n) {
     let cand = [];
@@ -578,12 +594,11 @@ function flowOrder(ps, list) {
 }
 
 function placeCard(p, noEdit) {
-  const badge = p.use === 'Take out' ? '<span class="badge orange">Take out</span>' : p.use === 'Both' ? '<span class="badge">Get in</span> <span class="badge orange">Take out</span>' : '<span class="badge">Get in</span>';
   const pos = p.position && p.position !== 'From log' ? `<span class="badge warn">${esc(p.position)}</span>` : '';
   const d = dirLink(p);
   return `<div class="card place">
-    <h3>${esc(p.name)} ${badge} ${pos}</h3>
-    <div class="codes">${p.grid ? `<span>${esc(p.grid)}</span>` : ''}${p.w3w ? `<span><a href="${w3wLink(p.w3w)}" target="_blank" rel="noopener">${esc(p.w3w)}</a></span>` : ''}${p.count ? `<span>Used ${p.count}×</span>` : ''}</div>
+    <h3>${esc(p.name)} ${pos}</h3>
+    <div class="codes">${p.grid ? `<span>${esc(p.grid)}</span>` : ''}${p.w3w ? `<span><a href="${w3wLink(p.w3w)}" target="_blank" rel="noopener">${esc(p.w3w)}</a></span>` : ''}${p.count ? `<span>Used ${p.count}×</span>` : ''}${p.gauge ? `<span>Gauge: ${esc(p.gauge)}</span>` : ''}</div>
     ${p.notes ? `<div class="notes muted">${esc(p.notes)}</div>` : ''}
     <div class="btnrow">
       ${d ? `<a class="btn small" href="${d}" target="_blank" rel="noopener">${ICON.nav} Directions</a>` : ''}
@@ -594,12 +609,11 @@ function placeCard(p, noEdit) {
 
 // One line per place; tap to open the details
 function placeRow(p, i) {
-  const cls = p.use === 'Take out' ? 'out' : p.use === 'Both' ? 'both' : '';
   const d = dirLink(p);
   const pos = p.position && p.position !== 'From log' ? `<span class="badge warn">${esc(p.position)}</span>` : '';
-  return `<details class="prow"><summary><span class="seq ${cls}">${i + 1}</span><span class="nm">${esc(p.name)}</span><span class="use">${esc(p.use || '')}</span>${ICON.chev}</summary>
+  return `<details class="prow"><summary><span class="seq">${i + 1}</span><span class="nm">${esc(p.name)}</span>${ICON.chev}</summary>
     <div class="body">${pos}
-      <div class="codes">${p.grid ? `<span>${esc(p.grid)}</span>` : ''}${p.w3w ? `<span><a href="${w3wLink(p.w3w)}" target="_blank" rel="noopener">${esc(p.w3w)}</a></span>` : ''}${p.count ? `<span>Used ${p.count}×</span>` : ''}</div>
+      <div class="codes">${p.grid ? `<span>${esc(p.grid)}</span>` : ''}${p.w3w ? `<span><a href="${w3wLink(p.w3w)}" target="_blank" rel="noopener">${esc(p.w3w)}</a></span>` : ''}${p.count ? `<span>Used ${p.count}×</span>` : ''}${p.gauge ? `<span>Gauge: ${esc(p.gauge)}</span>` : ''}</div>
       ${p.notes ? `<div class="notes muted">${esc(p.notes)}</div>` : ''}
       <div class="btnrow">
         ${d ? `<a class="btn small" href="${d}" target="_blank" rel="noopener">${ICON.nav} Directions</a>` : ''}
@@ -611,12 +625,10 @@ function placeRow(p, i) {
 // Share a place through the phone's share sheet (WhatsApp, Messages, email…)
 window.sharePlace = async function (name) {
   const p = placeByName()[name]; if (!p) return;
-  const lines = [p.name + (p.river ? ' – ' + p.river : '') + (p.use ? ' (' + p.use.toLowerCase() + ')' : '')];
-  if (p.latN != null) lines.push('Map: https://www.google.com/maps/search/?api=1&query=' + p.latN + ',' + p.lonN);
-  if (p.grid) lines.push('OS grid ref: ' + p.grid);
-  if (p.w3w) lines.push('what3words: ///' + String(p.w3w).replace(/^\/+/, ''));
-  if (p.notes) lines.push(p.notes);
-  const text = lines.join('\n');
+  // just the name and a map link
+  const link = p.latN != null ? 'https://www.google.com/maps/search/?api=1&query=' + p.latN + ',' + p.lonN
+    : p.w3w ? w3wLink(p.w3w) : '';
+  const text = [p.name, link].filter(Boolean).join('\n');
   if (navigator.share) { try { await navigator.share({ title: p.name, text }); } catch (e) {} return; }
   try { await navigator.clipboard.writeText(text); toast('Copied – paste it into a message'); } catch (e) { toast('Sharing isn\'t available here'); }
 };
@@ -632,10 +644,10 @@ function screenRiver(name) {
     <div class="meta"><span class="badge">${list.length} ${list.length === 1 ? 'trip' : 'trips'}</span>${yrs ? `<span class="badge grey">${yrs}</span>` : ''}
       ${Array.from(r.sections).slice(0, 6).map(s => `<span class="badge orange">${esc(s)}</span>`).join('')}</div>
     <div class="mapbox small" id="riverMap"></div>
-    <div class="legend"><span><i style="background:#6DB33F"></i>Get in</span><span><i class="out"></i>Take out</span><span><i class="both"></i>Both</span><span><i class="ph"></i>Photo</span></div>
-    <h2>Get-ins &amp; take-outs</h2>
+    <div class="legend"><span><i style="background:#6DB33F"></i>Access point</span><span><i class="ph"></i>Photo</span></div>
+    <h2>Access points</h2>
     ${ps.length ? `<div class="updown">Top of the river first, worked out from your trips. Tap a place for details.</div>
-      <div class="places">${ps.map(placeRow).join('')}</div>` : '<div class="empty">No places saved yet</div>'}
+      <div class="places">${ps.map(placeRow).join('')}</div>` : '<div class="empty">No access points saved yet</div>'}
     ${Object.keys(gauges).length ? `<h2>Gauges</h2><div class="card">${Object.keys(gauges).map(g =>
       `<div class="row" style="box-shadow:none;margin:0;padding:8px 0;cursor:default"><div class="grow"><div class="t">${esc(g)}</div>
         <div class="s">${gauges[g]} ${gauges[g] === 1 ? 'reading' : 'readings'}${(S.data.gauges || {})[g] ? '' : ' · link searches the web'}</div></div>
@@ -653,8 +665,8 @@ function afterRiver(name) {
   const el = $('#riverMap'); if (!el) return;
   const list = entries().filter(e => (e.river || '').trim() === name);
   const pts = riverPlaces(name, list).map((p, i) => Object.assign(p, { n: i + 1 })).filter(p => p.latN != null).map(p => ({
-    lat: p.latN, lon: p.lonN, use: p.use, n: p.n,
-    popup: `<b>${esc(p.name)}</b><br>${esc(p.use)}${dirLink(p) ? `<br><a href="${dirLink(p)}" target="_blank" rel="noopener">Directions</a>` : ''}`
+    lat: p.latN, lon: p.lonN, n: p.n,
+    popup: `<b>${esc(p.name)}</b>${dirLink(p) ? `<br><a href="${dirLink(p)}" target="_blank" rel="noopener">Directions</a>` : ''}`
   }));
   const map = makeMap(el, pts, { big: true, maxZoom: 15, zoom: 14 });
   if (map) addPhotoDots(map, livePhotos().filter(p => (p.river || '').trim() === name));
@@ -872,7 +884,7 @@ function screenTrip(id) {
         ${placeLine('Take out', e.takeOutPlace, e.takeOutNotes)}
         ${e.weather ? `<dt>Weather</dt><dd>${esc(e.weather)}</dd>` : ''}
         ${e.tide ? `<dt>Tide</dt><dd>${esc(e.tide)}</dd>` : ''}
-        ${e.gauge ? `<dt>Gauge</dt><dd>${esc(e.gauge)}${lv ? ' – ' + esc(lv) : ''}</dd>` : ''}
+        ${e.gauge ? `<dt>Gauge</dt><dd>${esc(e.gauge)}${lv ? ' – ' + esc(lv) : ''}${e.levelAuto && lv ? ` <span class="badge grey">auto</span><br><small class="muted">${esc(e.levelAuto)}</small>` : ''}${!lv && e.start && autoGauge(e.gauge) ? '<br><small class="muted">Level will be filled in from the gauge</small>' : ''}</dd>` : ''}
         ${e.levelComments ? `<dt>Level</dt><dd>${esc(e.levelComments)}</dd>` : ''}
       </dl></div>
     ${splitNames(e.paddlers).length ? `<h2>Paddlers</h2><div class="chips">${splitNames(e.paddlers).map(n => `<a class="chip" href="#buddy/${enc(n)}" style="text-decoration:none;color:inherit">${esc(n)}</a>`).join('')}</div>` : ''}
@@ -978,8 +990,8 @@ function placeOptions(river, selected) {
   const opt = n => `<option value="${esc(n)}"${n === selected ? ' selected' : ''}>${esc(n)}</option>`;
   return `<option value="">– choose –</option>
     ${top.length ? `<optgroup label="${esc(river || 'This river')}">${top.map(opt).join('')}</optgroup>` : ''}
-    <option value="__new">＋ New place…</option>
-    <optgroup label="All places">${rest.map(opt).join('')}</optgroup>`;
+    <option value="__new">＋ New access point…</option>
+    <optgroup label="All access points">${rest.map(opt).join('')}</optgroup>`;
 }
 
 function placeField(which, label, value) {
@@ -987,7 +999,7 @@ function placeField(which, label, value) {
     <select id="f_${which}" onchange="placeChanged('${which}')">${placeOptions(FORM.river, value)}
       ${which === 'out' ? `<option value="__same">Same as put in</option>` : ''}</select>
     <div id="np_${which}" class="subform" hidden>
-      <label>Name of new place</label><input id="np_${which}_name" placeholder="e.g. Ferry Lane slip">
+      <label>Name of new access point</label><input id="np_${which}_name" placeholder="e.g. Ferry Lane slip">
       <div class="btnrow"><button type="button" class="btn small" onclick="useGPS('${which}')">${ICON.gps} Use my location</button>
         <button type="button" class="btn small ghost" onclick="pickOnMap('${which}')">${ICON.pin} Pick on map</button></div>
       <div id="np_${which}_map" class="pickmap" hidden></div>
@@ -1016,7 +1028,39 @@ window.syncDate = function () {
   const y = +$('#f_yy').value, m = +$('#f_mm').value, last = new Date(y, m, 0).getDate();
   if (+$('#f_dd').value > last) $('#f_dd').value = last; // e.g. 31 June becomes 30 June
   $('#f_date').value = y + '-' + String(m).padStart(2, '0') + '-' + String($('#f_dd').value).padStart(2, '0');
+  showNow();
 };
+
+// Start / finish time with a Now button when the trip is today
+function timeField(k, label, value) {
+  return `<label>${label}</label><div class="timerow"><input id="f_${k}" type="time" value="${esc(value || '')}">
+    <button type="button" class="btn small ghost nowbtn" onclick="setNow('${k}')" hidden>Now</button></div>`;
+}
+function showNow() {
+  const today = $('#f_date') && $('#f_date').value === isoDate(new Date());
+  $$('.nowbtn').forEach(b => { b.hidden = !today; });
+}
+window.setNow = function (k) { $('#f_' + k).value = roundNow(); saveDraft(); };
+
+// Gauges used on this river (from your trips, its access points and the Gauges tab)
+function riverGauges(river) {
+  if (!river) return [];
+  const c = {};
+  const add = (g, w) => { g = String(g || '').trim(); if (g) c[g] = (c[g] || 0) + w; };
+  entries().filter(e => e.river === river).forEach(e => add(e.gauge, 1));
+  places().filter(p => p.river === river).forEach(p => add(p.gauge, 1));
+  Object.entries(gaugeInfo()).forEach(([g, i]) => { if (String(i.river || '').split('/').map(x => x.trim()).includes(river)) add(g, 0.5); });
+  return Object.entries(c).sort((a, b) => b[1] - a[1]).map(x => x[0]).slice(0, 8);
+}
+function drawGauges() {
+  const box = $('#gaugeChips'); if (!box) return;
+  const cur = $('#f_gauge').value.trim();
+  box.innerHTML = riverGauges(FORM.river).map(g => `<button type="button" class="chip${g === cur ? ' on' : ''}" onclick="pickGauge(${esc(JSON.stringify(g))})">${esc(g)}</button>`).join('');
+  const lv = $('#f_level').value.trim() || $('#f_flow').value.trim();
+  $('#gaugeHint').textContent = cur && autoGauge(cur) && !lv ? 'Leave level and flow blank – they’ll be filled in from the gauge for your start time.' : '';
+}
+window.pickGauge = function (g) { $('#f_gauge').value = g; drawGauges(); saveDraft(); };
+window.gaugeTyped = drawGauges;
 
 function screenForm(id, candId) {
   const editing = id != null;
@@ -1040,11 +1084,8 @@ function screenForm(id, candId) {
   const f = (k, l, ph, type) => `<label>${l}</label><input id="f_${k}" ${type ? `type="${type}"` : ''} value="${esc(v[k] || '')}" placeholder="${esc(ph || '')}">`;
   const ta = (k, l, ph) => `<label>${l}</label><textarea id="f_${k}" placeholder="${esc(ph || '')}">${esc(v[k] || '')}</textarea>`;
   const more = `
-      <div class="grid2"><div>${f('start', 'Start', '', 'time')}</div><div>${f('finish', 'Finish', '', 'time')}</div></div>
       ${f('weather', 'Weather', 'Sunny, light SW breeze')}
       ${f('tide', 'Tide', 'HW 14:41 Richmond')}
-      <label>Gauge</label><input id="f_gauge" list="dl_gauges" value="${esc(v.gauge || '')}">
-      <div class="grid2"><div>${f('level', 'Level (m)', '0.75', 'text')}</div><div>${f('flow', 'Flow (cumecs)', '', 'text')}</div></div>
       ${ta('levelComments', 'Level comments', 'Good level, few scrapes')}
       ${ta('notes', 'Notes', 'How it went, lines, swims, lessons…')}
       ${ta('putInNotes', 'Put-in notes for this trip', '')}
@@ -1057,7 +1098,13 @@ function screenForm(id, candId) {
     <label>River / water</label><input id="f_river" list="dl_rivers" value="${esc(v.river || '')}" onchange="riverChanged()" autocomplete="off">
     <label>Section</label><input id="f_section" list="dl_sections" value="${esc(v.section || '')}" autocomplete="off">
     ${placeField('in', 'Put in', v.putInPlace)}
+    ${timeField('start', 'Start time', v.start)}
     ${placeField('out', 'Take out', v.takeOutPlace)}
+    ${timeField('finish', 'Finish time', v.finish)}
+    <label>Gauge</label><input id="f_gauge" list="dl_gauges" value="${esc(v.gauge || '')}" oninput="gaugeTyped()" autocomplete="off" placeholder="Tap one below or type">
+    <div class="chips" id="gaugeChips"></div>
+    <div class="grid2"><div>${f('level', 'Level (m)', '', 'text')}</div><div>${f('flow', 'Flow (cumecs)', '', 'text')}</div></div>
+    <div class="muted small" id="gaugeHint"></div>
     <label>Paddlers</label>
     <div class="chips" id="padChips"></div>
     <input id="f_padIn" list="dl_buddies" placeholder="Add a name, then tap Add" onkeydown="if(event.key==='Enter'||event.key===','){event.preventDefault();addPaddler()}">
@@ -1077,7 +1124,8 @@ function screenForm(id, candId) {
   </div>`;
 }
 function afterForm() {
-  sectionsList(); drawPaddlers();
+  sectionsList(); drawPaddlers(); drawGauges(); showNow();
+  ['level', 'flow'].forEach(k => { const el = $('#f_' + k); el && el.addEventListener('input', drawGauges); });
   if (!FORM.id && !FORM.cand) { const fm = $('#paddleForm'); fm && fm.addEventListener('input', saveDraft); fm && fm.addEventListener('change', saveDraft); }
 }
 function sectionsList() {
@@ -1092,10 +1140,14 @@ window.riverChanged = function () {
     sel.innerHTML = placeOptions(FORM.river, cur) + (w === 'out' ? '<option value="__same">Same as put in</option>' : '');
     if (cur === '__same') sel.value = '__same';
   });
-  sectionsList(); drawPaddlers();
+  sectionsList(); drawPaddlers(); drawGauges();
 };
 window.placeChanged = function (w) {
-  const box = $('#np_' + w); box.hidden = $('#f_' + w).value !== '__new';
+  const v = $('#f_' + w).value;
+  const box = $('#np_' + w); box.hidden = v !== '__new';
+  // the access point's usual gauge, if none chosen yet
+  const p = placeByName()[v], g = $('#f_gauge');
+  if (p && p.gauge && g && !g.value.trim()) { g.value = p.gauge; drawGauges(); saveDraft(); }
 };
 function drawPaddlers() {
   $('#padChips').innerHTML = FORM.paddlers.map((n, i) => `<button type="button" class="chip on" onclick="removePaddler(${i})">${esc(n)}<span class="x">✕</span></button>`).join('');
@@ -1174,7 +1226,7 @@ window.pickOnMap = function (w) {
   setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
   if (FORM['map_' + w]) { FORM['map_' + w].invalidateSize(); return; }
   const near = places().filter(p => p.river === FORM.river && p.latN != null);
-  const map = makeMap(el, near.map(p => ({ lat: p.latN, lon: p.lonN, use: p.use, popup: esc(p.name) })), { maxZoom: 14 });
+  const map = makeMap(el, near.map(p => ({ lat: p.latN, lon: p.lonN, popup: esc(p.name) })), { maxZoom: 14 });
   if (!map) return;
   FORM['map_' + w] = map;
   toast('Tap the map where the place is');
@@ -1197,22 +1249,21 @@ function collectForm() {
     level: val('level'), flow: val('flow'), levelComments: val('levelComments'), notes: val('notes'),
     putInNotes: val('putInNotes'), takeOutNotes: val('takeOutNotes'), newPlaces: []
   };
-  const newPlace = (w, use) => {
+  const newPlace = w => {
     const name = $('#np_' + w + '_name').value.trim();
     if (!name) return null;
     const pos = FORM.np[w] || {};
-    return { name, river: p.river, use, lat: pos.lat != null ? pos.lat : '', lon: pos.lon != null ? pos.lon : '',
+    return { name, river: p.river, gauge: p.gauge, lat: pos.lat != null ? pos.lat : '', lon: pos.lon != null ? pos.lon : '',
       grid: $('#np_' + w + '_grid').value.trim(), w3w: $('#np_' + w + '_w3w').value.trim(), notes: $('#np_' + w + '_notes').value.trim() };
   };
   const pin = val('in'), pout = val('out');
-  if (pin === '__new') { const np = newPlace('in', 'Get in'); if (np) { p.newPlaces.push(np); p.putInPlace = np.name; } }
+  if (pin === '__new') { const np = newPlace('in'); if (np) { p.newPlaces.push(np); p.putInPlace = np.name; } }
   else p.putInPlace = pin;
   if (pout === '__same') { p.takeOutPlace = p.putInPlace; }
   else if (pout === '__new') {
-    const np = newPlace('out', 'Take out');
-    if (np) { if (p.newPlaces[0] && p.newPlaces[0].name === np.name) p.newPlaces[0].use = 'Both'; else p.newPlaces.push(np); p.takeOutPlace = np.name; }
+    const np = newPlace('out');
+    if (np) { if (!(p.newPlaces[0] && p.newPlaces[0].name === np.name)) p.newPlaces.push(np); p.takeOutPlace = np.name; }
   } else p.takeOutPlace = pout;
-  if (p.takeOutPlace && p.takeOutPlace === p.putInPlace && p.newPlaces[0]) p.newPlaces[0].use = 'Both';
   return p;
 }
 
@@ -1227,8 +1278,8 @@ window.submitForm = function () {
   const p = collectForm();
   if (!p.date) { toast('Add a date'); return; }
   if (!p.river) { toast('Add the river or water'); return; }
-  if ($('#f_in').value === '__new' && !p.putInPlace) { toast('Give the new put-in a name'); return; }
-  if ($('#f_out').value === '__new' && !p.takeOutPlace) { toast('Give the new take-out a name'); return; }
+  if ($('#f_in').value === '__new' && !p.putInPlace) { toast('Give the new access point a name'); return; }
+  if ($('#f_out').value === '__new' && !p.takeOutPlace) { toast('Give the new access point a name'); return; }
   const id = FORM.id;
   if (id != null && String(id).startsWith('p:')) {
     // still on the phone: just replace the waiting item
@@ -1254,11 +1305,16 @@ window.submitForm = function () {
 
 function screenPlace(name) {
   const p = placeByName()[name];
-  if (!p) return topbar('Place', 'home') + '<div class="wrap empty">Place not found</div>';
+  if (!p) return topbar('Access point', 'home') + '<div class="wrap empty">Access point not found – it may have been renamed. Go back and try again.</div>';
   const usedOn = entries().filter(e => e.putInPlace === name || e.takeOutPlace === name);
   FORM.place = { name, lat: p.latN, lon: p.lonN };
+  const gs = Array.from(new Set(riverGauges(p.river).concat(Object.keys(gaugeInfo())))).sort();
   return topbar(name, 'home') + `<div class="wrap form">
     ${placeCard(Object.assign({}, p, { count: usedOn.length }), true)}
+    <label>Name</label><input id="pl_name" value="${esc(p.name)}" autocomplete="off">
+    <div class="muted small">Renaming also updates every trip that uses this access point.</div>
+    <label>Gauge for this access point</label><input id="pl_gauge" list="dl_plgauges" value="${esc(p.gauge || '')}" autocomplete="off">
+    <datalist id="dl_plgauges">${gs.map(g => `<option value="${esc(g)}">`).join('')}</datalist>
     <h2>Position</h2>
     <div class="btnrow"><button class="btn small" onclick="placeGPS()">${ICON.gps} Use my location</button>
       <span class="muted" style="align-self:center">or tap the map</span></div>
@@ -1267,13 +1323,13 @@ function screenPlace(name) {
       <div><label>what3words</label><input id="pl_w3w" value="${esc(p.w3w || '')}"></div></div>
     <div class="muted" id="pl_pos">${p.latN != null ? p.latN.toFixed(5) + ', ' + p.lonN.toFixed(5) : 'No position yet'}</div>
     <label>Access notes</label><textarea id="pl_notes">${esc(p.notes || '')}</textarea>
-    <div class="btnrow" style="margin-top:18px"><button class="btn block" onclick="savePlace()">Save place</button></div>
+    <div class="btnrow" style="margin-top:18px"><button class="btn block" onclick="savePlace()">Save access point</button></div>
     ${usedOn.length ? `<h2>Trips from here</h2><ul class="list">${tripRows(usedOn)}</ul>` : ''}
   </div>`;
 }
 function afterPlace(name) {
   const p = placeByName()[name]; const el = $('#placeMap'); if (!el || !p) return;
-  const map = makeMap(el, p.latN != null ? [] : places().filter(x => x.river === p.river && x.latN != null).map(x => ({ lat: x.latN, lon: x.lonN, use: x.use, popup: esc(x.name) })), { big: true, zoom: 15, maxZoom: 13 });
+  const map = makeMap(el, p.latN != null ? [] : places().filter(x => x.river === p.river && x.latN != null).map(x => ({ lat: x.latN, lon: x.lonN, popup: esc(x.name) })), { big: true, zoom: 15, maxZoom: 13 });
   if (!map) return;
   if (p.latN != null) map.setView([p.latN, p.lonN], 15);
   FORM.placeMap = map; FORM.placeMarker = p.latN != null ? L.marker([p.latN, p.lonN], { icon: pinIcon() }).addTo(map) : null;
@@ -1298,10 +1354,17 @@ window.placeGrid = function () {
   else toast('Grid ref not recognised');
 };
 window.savePlace = function () {
-  const fields = { grid: $('#pl_grid').value.trim(), w3w: $('#pl_w3w').value.trim(), notes: $('#pl_notes').value.trim() };
+  const fields = { grid: $('#pl_grid').value.trim(), w3w: $('#pl_w3w').value.trim(), notes: $('#pl_notes').value.trim(), gauge: $('#pl_gauge').value.trim() };
   if (FORM.place.moved) { fields.lat = FORM.place.lat; fields.lon = FORM.place.lon; }
+  const newName = $('#pl_name').value.trim();
+  if (!newName) { toast('The access point needs a name'); return; }
+  if (newName !== FORM.place.name) {
+    if (places().some(x => x.name.toLowerCase() === newName.toLowerCase() && x.name !== FORM.place.name)) { toast('There is already an access point called ' + newName); return; }
+    fields.name = newName;
+  }
   enqueue({ kind: 'place', name: FORM.place.name, fields });
-  toast('Place saved'); history.back();
+  toast('Access point saved');
+  history.back();
 };
 
 /* ================= router ================= */

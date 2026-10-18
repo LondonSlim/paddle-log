@@ -316,3 +316,10 @@ body.dropping::after { content: 'Drop photos to add them to this trip'; position
 #viewer .vask .btn { position: static; width: auto; height: auto; border-radius: 10px; font-size: 14px; }
 #viewer .vask .btn.ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
 #viewer .vask .btn.danger { background: #B3261E; color: #fff; }
+
+/* v14: start/finish with a Now button, gauge picker */
+.timerow { display: flex; gap: 10px; align-items: center; }
+.timerow input { flex: 1; min-width: 0; }
+.timerow .nowbtn { flex: none; min-width: 72px; }
+.muted.small, .small.muted { font-size: 13px; margin-top: 4px; }
+#gaugeChips:empty { display: none; }
