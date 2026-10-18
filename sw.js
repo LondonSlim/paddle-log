@@ -1,6 +1,6 @@
 /* Water Log service worker: keeps the app itself on the phone so it opens with no signal.
  * Bump VERSION whenever app files change so phones pick up the new version. */
-const VERSION = 'wl-v12';
+const VERSION = 'wl-v13';
 const SHELL = [
   './', 'index.html', 'app.css', 'app.js', 'osgrid.js', 'home1.jpg', 'home2.jpg', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
@@ -8,7 +8,10 @@ const SHELL = [
   'vendor/fonts/bricolage-grotesque-latin-600-normal.woff2',
   'vendor/fonts/bricolage-grotesque-latin-800-normal.woff2',
   'vendor/fonts/inter-latin-400-normal.woff2',
-  'vendor/fonts/inter-latin-600-normal.woff2'
+  'vendor/fonts/inter-latin-600-normal.woff2',
+  // Clarissa's log: same app, her own start page, colours, photos and icon
+  'clarissa/', 'clarissa/index.html', 'clarissa/theme.css', 'clarissa/manifest.webmanifest',
+  'clarissa/home1.jpg', 'clarissa/home2.jpg', 'clarissa/icons/icon-192.png', 'clarissa/icons/icon-512.png', 'clarissa/icons/apple-touch-icon.png'
 ];
 const TILES = 'wl-tiles';
 const MAX_TILES = 1500;
@@ -49,7 +52,8 @@ self.addEventListener('fetch', e => {
   // App files: the latest from the web when there's signal (so updates arrive straight away),
   // the copy saved on the phone when there isn't
   e.respondWith(caches.open(VERSION).then(async c => {
-    const saved = () => c.match(req, { ignoreSearch: true }).then(hit => hit || (req.mode === 'navigate' ? c.match('index.html') : null));
+    const home = /\/clarissa\//.test(url.pathname) ? 'clarissa/index.html' : 'index.html';
+    const saved = () => c.match(req, { ignoreSearch: true }).then(hit => hit || (req.mode === 'navigate' ? c.match(home) : null));
     try {
       const res = await Promise.race([
         fetch(req, { cache: 'no-cache' }),

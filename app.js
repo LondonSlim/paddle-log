@@ -3,8 +3,11 @@
  * Everything is cached on the phone so the app opens and logs paddles with no signal. */
 'use strict';
 
+// Each log (Hugh's, Clarissa's) keeps its own copy on the phone: the page sets WL_NS before loading this file
+const NS = window.WL_NS || '';
+const ROOT = window.WL_ROOT || '';
 const LS = {
-  cfg: 'wl_cfg', data: 'wl_data', queue: 'wl_queue', draft: 'wl_draft', sort: 'wl_sort'
+  cfg: NS + 'wl_cfg', data: NS + 'wl_data', queue: NS + 'wl_queue', draft: NS + 'wl_draft', sort: NS + 'wl_sort', budsort: NS + 'wl_budsort'
 };
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
@@ -461,14 +464,14 @@ window.filterTrips = function () {
 };
 
 function screenBuddies() {
-  const sort = store.get('wl_budsort', 'most');
+  const sort = store.get(LS.budsort, 'most');
   return topbar('Paddling buddies', 'home') + `<div class="wrap">
     <input class="search" id="bq" placeholder="Search names" oninput="filterBuddies()">
     <div class="seg"><button class="${sort === 'most' ? 'on' : ''}" onclick="setBudSort('most')">Most trips</button><button class="${sort === 'az' ? 'on' : ''}" onclick="setBudSort('az')">A–Z</button></div>
     <ul class="list" id="budList">${budRows(sortBuddies(buddyCounts(entries())))}</ul></div>`;
 }
-const sortBuddies = b => store.get('wl_budsort', 'most') === 'az' ? b.slice().sort((x, y) => x[0].localeCompare(y[0])) : b;
-window.setBudSort = k => { store.set('wl_budsort', k); const q = $('#bq') && $('#bq').value; render(); if (q) { $('#bq').value = q; filterBuddies(); } };
+const sortBuddies = b => store.get(LS.budsort, 'most') === 'az' ? b.slice().sort((x, y) => x[0].localeCompare(y[0])) : b;
+window.setBudSort = k => { store.set(LS.budsort, k); const q = $('#bq') && $('#bq').value; render(); if (q) { $('#bq').value = q; filterBuddies(); } };
 const budRows = b => b.map(([n, c]) => `<li><a class="row" href="#buddy/${enc(n)}"><div class="grow"><div class="t">${esc(n)}</div></div>
   <span class="badge">${c} ${c === 1 ? 'trip' : 'trips'}</span>${ICON.chev}</a></li>`).join('');
 window.filterBuddies = function () {
@@ -1356,7 +1359,7 @@ window.addEventListener('hashchange', () => { setupFromLink(); render(); });
   render();
   if (S.cfg) { if (had) refresh(true); flush(); }
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+    navigator.serviceWorker.register(ROOT + 'sw.js', { scope: ROOT || './', updateViaCache: 'none' }).then(reg => {
       document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
     }).catch(() => {});
     // a new version has taken over: reload, but never in the middle of a form

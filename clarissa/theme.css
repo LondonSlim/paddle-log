@@ -1,0 +1,16 @@
+/* Clarissa's Water Log: canoe red instead of orange, and a hint of pink on the pages */
+:root {
+  --org: #C8233B;          /* nav, Log button, highlights */
+  --orange: #EE8F9C;       /* soft buttons and pins */
+  --orange-soft: #FBE0E5;  /* date boxes, banners */
+  --orange-deep: #A81E33;  /* month on date boxes, strong text */
+  --paper: #FFF5F7;        /* page background */
+  --line: #F2DDE2;
+}
+.topbar { background: rgba(255, 245, 247, .92); }
+.nav a.add .plus { box-shadow: 0 4px 16px rgba(200, 35, 59, .45); }
+/* landing page photos */
+.board .p1 { background-image: url(home1.jpg); }
+.board .p2 { background-image: url(home2.jpg); }
+/* map key colours stay the same as Hugh's so the pins read the same */
+.seq.out { background: #F4A261; }
