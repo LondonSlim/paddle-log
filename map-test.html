@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Map Layer Test</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --ink:#1d2a2a; --chip:#ffffffee; --on:#2f7d5b; --onink:#fff; }
+  html, body { height:100%; margin:0; }
+  body { font:15px -apple-system, system-ui, sans-serif; color:var(--ink); }
+  #map { position:fixed; inset:0; }
+  .bar {
+    position:fixed; left:0; right:0; bottom:0; z-index:1000;
+    padding:10px max(12px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    display:flex; gap:8px; overflow-x:auto; -webkit-overflow-scrolling:touch;
+    background:linear-gradient(to top, #0004, #0000);
+  }
+  .bar button {
+    flex:0 0 auto; border:0; border-radius:999px; padding:9px 14px;
+    font:inherit; font-weight:600; background:var(--chip); color:var(--ink);
+    box-shadow:0 1px 4px #0003;
+  }
+  .bar button[aria-pressed="true"] { background:var(--on); color:var(--onink); }
+  #locate {
+    position:fixed; z-index:1000; right:max(12px, env(safe-area-inset-right));
+    top:calc(12px + env(safe-area-inset-top));
+    width:44px; height:44px; border:0; border-radius:50%;
+    background:var(--chip); box-shadow:0 1px 4px #0003; font-size:20px;
+  }
+  .leaflet-control-attribution { font-size:10px; }
+  .leaflet-bottom { bottom:calc(58px + env(safe-area-inset-bottom)); }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<button id="locate" aria-label="Show my location">◎</button>
+<nav class="bar" id="bar"></nav>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const OSM = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+const layers = {
+  'OSM Standard': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { maxZoom:19, attribution:OSM }),
+  'Humanitarian': L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+    { maxZoom:19, subdomains:'abc', attribution:OSM + ', HOT' }),
+  'CARTO Voyager': L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    { maxZoom:20, subdomains:'abcd', attribution:OSM + ' &copy; CARTO' }),
+  'CARTO Light': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    { maxZoom:20, subdomains:'abcd', attribution:OSM + ' &copy; CARTO' }),
+  'Topo (compare)': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    { maxZoom:17, subdomains:'abc', attribution:OSM + ', SRTM | &copy; OpenTopoMap' })
+};
+
+const map = L.map('map', { zoomControl:false }).setView([51.53, -0.18], 13);
+let current;
+const bar = document.getElementById('bar');
+
+function show(name) {
+  if (current) map.removeLayer(current);
+  current = layers[name].addTo(map);
+  [...bar.children].forEach(b => b.setAttribute('aria-pressed', b.textContent === name));
+}
+
+Object.keys(layers).forEach(name => {
+  const b = document.createElement('button');
+  b.textContent = name;
+  b.onclick = () => show(name);
+  bar.appendChild(b);
+});
+show('OSM Standard');
+
+let me;
+document.getElementById('locate').onclick = () => map.locate({ setView:true, maxZoom:15 });
+map.on('locationfound', e => {
+  if (me) map.removeLayer(me);
+  me = L.circleMarker(e.latlng, { radius:8, color:'#fff', weight:3, fillColor:'#2f7d5b', fillOpacity:1 }).addTo(map);
+});
+map.on('locationerror', () => { document.getElementById('locate').textContent = '✕'; });
+</script>
+</body>
+</html>
