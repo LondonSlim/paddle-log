@@ -1,1 +1,197 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Access Point Sorter</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#f6f4ee;--panel:#fff;--ink:#1d2a2e;--mute:#5d6b70;--line:#d9d6cb;--pub:#2e8b57;--per:#2f6fb5;--uns:#d98e04;--acc:#1d5c63;--bad:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#14191b;--panel:#1d2427;--ink:#e6ecee;--mute:#9aa9ae;--line:#33403f;--pub:#4cb97f;--per:#6aa3e6;--uns:#f0b030;--acc:#6bc3cc;--bad:#f2867f}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,sans-serif;display:flex;flex-direction:column}
+header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+h1{font-size:17px;margin:0 8px 0 0}
+button,input,select,textarea{font:inherit;color:inherit}
+button{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer;min-height:36px}
+button[aria-pressed=true]{background:var(--acc);color:var(--bg);border-color:var(--acc)}
+button.primary{background:var(--acc);color:var(--bg);border-color:var(--acc)}
+button.danger{color:var(--bad)}
+input,select,textarea{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:baseline}
+main{flex:1;display:flex;min-height:0}
+#map{flex:1;min-width:0}
+aside{width:380px;max-width:45%;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+#list{overflow:auto;flex:1}
+.row{padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.row:hover,.row.sel{background:var(--bg)}
+.row small{color:var(--mute);display:block}
+#detail{overflow:auto;padding:12px;flex:1}
+#detail label{display:block;font-size:12px;color:var(--mute);margin:10px 0 3px}
+.btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.note{font-size:13px;color:var(--mute)}
+#msg{padding:6px 12px;font-size:13px;background:var(--bg);border-bottom:1px solid var(--line);min-height:28px}
+#msg.err{color:var(--bad)}
+#cfg{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:16px;z-index:2000}
+#cfg div{background:var(--panel);padding:16px;border-radius:10px;max-width:420px;width:100%}
+.hint{position:absolute;z-index:1000;left:50%;transform:translateX(-50%);top:10px;background:var(--acc);color:var(--bg);padding:6px 12px;border-radius:6px}
+@media (max-width:760px){main{flex-direction:column}#map{flex:none;height:42vh}aside{width:100%;max-width:none;border-left:0;border-top:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Access Point Sorter</h1>
+  <div class="chips" id="classChips"></div>
+  <label class="note"><input type="checkbox" id="unrev" style="width:auto"> Unreviewed only</label>
+  <input id="q" type="search" placeholder="Search name, river…" style="max-width:200px">
+  <button id="addBtn">+ Add point</button>
+  <button id="csvBtn">Export CSV</button>
+  <button id="cfgBtn">Settings</button>
+</header>
+<div id="msg" role="status"></div>
+<main>
+  <div id="map" style="position:relative"></div>
+  <aside>
+    <div id="detail" hidden></div>
+    <div id="list"></div>
+  </aside>
+</main>
+<div id="cfg"><div>
+  <b>Connect to the sheet</b>
+  <p class="note">Paste the web-app URL from Apps Script and your key. They are kept only in this browser.</p>
+  <label class="note">Web-app URL</label><input id="cfgUrl" autocomplete="off">
+  <label class="note">Key</label><input id="cfgKey" type="password" autocomplete="off">
+  <div class="btns"><button class="primary" id="cfgSave">Save</button><button id="cfgCancel">Cancel</button></div>
+</div></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function(){
+'use strict';
+var CLS=['Public','Personal','Unsure'];
+var COL={Public:'var(--pub)',Personal:'var(--per)',Unsure:'var(--uns)'};
+var HEX={Public:'#2e8b57',Personal:'#2f6fb5',Unsure:'#d98e04'};
+var pts=[],byId={},markers={},sel=null,filt={cls:'All',unrev:false,q:''},adding=false,pending=null;
+var $=function(id){return document.getElementById(id)};
+function h(tag,attrs){var e=document.createElement(tag);for(var k in (attrs||{})){var v=attrs[k];if(k==='text')e.textContent=v;else if(k.slice(0,2)==='on')e.addEventListener(k.slice(2),v);else e.setAttribute(k,String(v))}
+  for(var i=2;i<arguments.length;i++){var c=arguments[i];if(c==null)continue;e.appendChild(typeof c==='string'?document.createTextNode(c):c)}return e}
+function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
+function msg(t,err){var m=$('msg');m.textContent=t||'';m.className=err?'err':''}
+var cfg={url:store('aps_url')||'',key:store('aps_key')||''};
+
+/* ---- map ---- */
+var map=L.map('map',{zoomControl:true}).setView([52.5,-1.5],6);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
+var layer=L.layerGroup().addTo(map),draft=null;
+map.on('click',function(e){if(!adding)return;
+  adding=false;$('map').style.cursor='';var n=$('hintbar');if(n)n.remove();
+  pending={lat:+e.latlng.lat.toFixed(6),lon:+e.latlng.lng.toFixed(6)};
+  if(draft)map.removeLayer(draft);
+  draft=L.circleMarker(e.latlng,{radius:9,color:'#000',weight:2,fillColor:'#fff',fillOpacity:1}).addTo(map);
+  showDetail(null)});
+
+/* ---- data ---- */
+function api(method,body){
+  if(!cfg.url||!cfg.key){openCfg();return Promise.reject(new Error('Not connected'))}
+  var p=method==='GET'?fetch(cfg.url+(cfg.url.indexOf('?')<0?'?':'&')+'key='+encodeURIComponent(cfg.key)):
+    fetch(cfg.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(Object.assign({key:cfg.key},body))});
+  return p.then(function(r){return r.json()}).then(function(j){if(j.error)throw new Error(j.error);return j})}
+function norm(p){p.lat=parseFloat(p.lat);p.lon=parseFloat(p.lon);p.reviewed=(p.reviewed===true||String(p.reviewed).toUpperCase()==='TRUE');
+  if(CLS.indexOf(p['class'])<0)p['class']='Unsure';return p}
+function load(){msg('Loading…');api('GET').then(function(j){pts=j.points.map(norm);byId={};pts.forEach(function(p){byId[p.id]=p});msg(pts.length+' points loaded.');render()}).catch(function(e){msg('Could not load: '+e.message,true)})}
+function save(id,fields,okMsg){msg('Saving…');var p=byId[id];Object.assign(p,fields);
+  return api('POST',{action:'update',id:id,fields:fields}).then(function(){msg(okMsg||'Saved.');render()}).catch(function(e){msg('Not saved: '+e.message,true)})}
+
+/* ---- render ---- */
+function shown(){var q=filt.q.toLowerCase();return pts.filter(function(p){
+  if(filt.cls!=='All'&&p['class']!==filt.cls)return false;
+  if(filt.unrev&&p.reviewed)return false;
+  if(q&&(p.name+' '+p.river+' '+p.public_name+' '+p.also_known_as).toLowerCase().indexOf(q)<0)return false;
+  return true})}
+function render(){
+  var s=shown();
+  layer.clearLayers();markers={};
+  s.forEach(function(p){if(isNaN(p.lat)||isNaN(p.lon))return;
+    var m=L.circleMarker([p.lat,p.lon],{radius:p.id===sel?10:7,color:p.reviewed?'#fff':'#000',weight:p.id===sel?3:1.5,fillColor:HEX[p['class']],fillOpacity:.9});
+    m.on('click',function(ev){L.DomEvent.stopPropagation(ev);if(!adding)select(p.id)});
+    m.bindTooltip(p.name);m.addTo(layer);markers[p.id]=m});
+  var l=$('list');l.textContent='';
+  s.forEach(function(p){l.appendChild(h('div',{'class':'row'+(p.id===sel?' sel':''),onclick:function(){select(p.id,true)}},
+    h('span',{'class':'dot',style:'background:'+COL[p['class']]}),p.name+(p.reviewed?'':' •'),
+    h('small',{text:[p.river,p['class']].filter(Boolean).join(' · ')})))});
+  if(!s.length)l.appendChild(h('div',{'class':'row',text:'No points match.'}));
+  chips()}
+function chips(){var c=$('classChips');c.textContent='';
+  ['All'].concat(CLS).forEach(function(k){var n=k==='All'?pts.length:pts.filter(function(p){return p['class']===k}).length;
+    c.appendChild(h('button',{'aria-pressed':filt.cls===k,onclick:function(){filt.cls=k;render()}},k+' '+n))})}
+function select(id,pan){sel=id;if(draft){map.removeLayer(draft);draft=null}pending=null;var p=byId[id];
+  if(pan&&p&&!isNaN(p.lat))map.setView([p.lat,p.lon],Math.max(map.getZoom(),13));
+  showDetail(p);render()}
+
+/* ---- detail ---- */
+function field(label,el){return [h('label',{text:label}),el]}
+function showDetail(p){
+  var d=$('detail');d.textContent='';d.hidden=false;$('list').style.display='none';
+  var isNew=!p,f={};
+  function inp(k,ph,area){var e=area?h('textarea',{rows:3}):h('input',{});e.value=p?(p[k]==null?'':p[k]):'';if(ph)e.placeholder=ph;f[k]=e;return e}
+  d.appendChild(h('button',{onclick:closeDetail,text:'← List'}));
+  d.appendChild(h('h2',{text:isNew?'New access point':p.name,style:'margin:10px 0 0;font-size:17px'}));
+  if(!isNew)d.appendChild(h('div',{'class':'note',text:p.id+' · '+(p.river||'')+' · '+p.lat+', '+p.lon+(p.os_grid_ref?' · '+p.os_grid_ref:'')+' · '+(p.trips||0)+' trip(s)'}));
+  if(isNew)d.appendChild(h('div',{'class':'note',text:'Position '+pending.lat+', '+pending.lon}));
+  var items=[['Name (as in the logbook)','name'],['River','river'],['Public name','public_name'],['Public description','public_description',1],['Also known as','also_known_as'],['Private notes','private_notes',1],['Log notes','source_notes']];
+  if(isNew){items=[['Name','name'],['River','river'],['Public name','public_name'],['Public description','public_description',1],['Also known as','also_known_as'],['Private notes','private_notes',1]]}
+  items.forEach(function(it){if(it[1]==='source_notes')return;var e=inp(it[1],'',it[2]);field(it[0],e).forEach(function(n){d.appendChild(n)})});
+  if(!isNew){
+    d.appendChild(h('label',{text:'Claude’s first pass'}));
+    d.appendChild(h('div',{'class':'note',text:(p.claude_suggestion||'—')+(p.claude_reason?': '+p.claude_reason:'')}));
+    d.appendChild(h('label',{text:'Classification'}));
+    var b=h('div',{'class':'btns'});
+    CLS.forEach(function(c){b.appendChild(h('button',{'aria-pressed':p['class']===c,onclick:function(){
+      save(p.id,{'class':c,reviewed:true,last_checked:today()},p.name+' → '+c).then(function(){showDetail(byId[p.id])})}},
+      h('span',{'class':'dot',style:'background:'+COL[c]}),c))});
+    d.appendChild(b);
+    d.appendChild(h('div',{'class':'note',text:p.reviewed?'Reviewed '+(p.last_checked||''):'Not yet reviewed'}));
+  } else {
+    d.appendChild(h('label',{text:'Classification'}));
+    var s=h('select',{});CLS.forEach(function(c){s.appendChild(h('option',{value:c,text:c}))});s.value='Unsure';f['class']=s;d.appendChild(s);
+  }
+  var row=h('div',{'class':'btns'});
+  row.appendChild(h('button',{'class':'primary',text:isNew?'Add point':'Save text',onclick:function(){
+    var fields={};['name','river','public_name','public_description','also_known_as','private_notes'].forEach(function(k){if(f[k])fields[k]=f[k].value.trim()});
+    if(isNew){
+      if(!fields.name){msg('A name is needed.',true);return}
+      fields.lat=pending.lat;fields.lon=pending.lon;fields['class']=f['class'].value;fields.reviewed=true;fields.last_checked=today();
+      fields.origin='Added in sorter';fields.source='Hugh';fields.trips=0;fields.position_source='Tap on map';
+      msg('Adding…');api('POST',{action:'add',fields:fields}).then(function(j){var np=norm(Object.assign({id:j.id},fields));pts.push(np);byId[np.id]=np;msg('Added '+np.name+'.');pending=null;if(draft){map.removeLayer(draft);draft=null}select(np.id)}).catch(function(e){msg('Not added: '+e.message,true)});
+    } else save(p.id,fields,'Text saved.')}}));
+  if(!isNew)row.appendChild(h('button',{'class':'danger',text:'Delete',onclick:function(){
+    if(!confirm('Delete '+p.name+' from the sheet? This cannot be undone.'))return;
+    api('POST',{action:'delete',id:p.id}).then(function(){pts=pts.filter(function(x){return x.id!==p.id});delete byId[p.id];closeDetail();msg('Deleted.')}).catch(function(e){msg('Not deleted: '+e.message,true)})}}));
+  d.appendChild(row)}
+function closeDetail(){sel=null;pending=null;if(draft){map.removeLayer(draft);draft=null}$('detail').hidden=true;$('list').style.display='';render()}
+function today(){var d=new Date();return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)}
+
+/* ---- toolbar ---- */
+$('q').addEventListener('input',function(e){filt.q=e.target.value;render()});
+$('unrev').addEventListener('change',function(e){filt.unrev=e.target.checked;render()});
+$('addBtn').addEventListener('click',function(){adding=true;closeDetail();$('map').style.cursor='crosshair';
+  if(!$('hintbar'))$('map').appendChild(h('div',{'class':'hint',id:'hintbar',text:'Tap the map where the new point is'}))});
+$('csvBtn').addEventListener('click',function(){
+  var cols=['public_name','river','lat','lon','os_grid_ref','what3words','gauge','public_description'];
+  function q(v){v=v==null?'':String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}
+  var rows=pts.filter(function(p){return p['class']==='Public'&&p.reviewed}).map(function(p){return cols.map(function(c){return q(p[c])}).join(',')});
+  var blob=new Blob([cols.join(',')+'\n'+rows.join('\n')],{type:'text/csv'});
+  var a=h('a',{href:URL.createObjectURL(blob),download:'common-access-points.csv'});document.body.appendChild(a);a.click();a.remove();msg(rows.length+' public points exported.')});
+function openCfg(){$('cfgUrl').value=cfg.url;$('cfgKey').value=cfg.key;$('cfg').style.display='flex'}
+$('cfgBtn').addEventListener('click',openCfg);
+$('cfgCancel').addEventListener('click',function(){$('cfg').style.display='none'});
+$('cfgSave').addEventListener('click',function(){cfg.url=$('cfgUrl').value.trim();cfg.key=$('cfgKey').value.trim();store('aps_url',cfg.url);store('aps_key',cfg.key);$('cfg').style.display='none';load()});
+chips();
+if(cfg.url&&cfg.key)load();else{msg('Not connected yet.');openCfg()}
+})();
+</script>
+</body>
+</html>
 
