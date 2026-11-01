@@ -83,7 +83,9 @@ var cfg={url:store('aps_url')||'',key:store('aps_key')||''};
 
 /* ---- map ---- */
 var map=L.map('map',{zoomControl:true}).setView([52.5,-1.5],6);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
+var osm=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
+var sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Imagery &copy; Esri, Maxar, Earthstar Geographics'});
+L.control.layers({'Map':osm,'Satellite':sat},null,{position:'topright',collapsed:false}).addTo(map);
 var layer=L.layerGroup().addTo(map),draft=null;
 map.on('click',function(e){if(!adding)return;
   adding=false;$('map').style.cursor='';var n=$('hintbar');if(n)n.remove();
@@ -194,4 +196,3 @@ if(cfg.url&&cfg.key)load();else{msg('Not connected yet.');openCfg()}
 </script>
 </body>
 </html>
-
