@@ -473,3 +473,61 @@ details.gdet > summary .muted { font: 600 15px Inter, sans-serif; }
 #vmovebox .btn.ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
 #vmovebox .btn { background: var(--green); color: #fff; }
 #vmovebox .btn.ghost { background: #fff; }
+
+
+/* ---------- v18 ---------- */
+/* The page scrolls inside the app area and the menu bar sits below it, so the bar cannot drift up the screen on iPhone */
+html, body { height: 100%; }
+body { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+#app { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; padding-bottom: 16px; }
+.nav { position: relative; left: auto; right: auto; bottom: auto; flex: none; }
+body.homepage #app { padding-bottom: 0; }
+
+/* home: figures without tiles, green numbers and pale orange labels, centred in the band either side of the title */
+.board .st { width: 92px; padding: 0; border-radius: 0; background: none; box-shadow: none; text-align: center; }
+.board .st b, .board .s1 b, .board .s3 b, .board .s4 b { color: #7CC653; font-size: 40px; }
+.board .st span { color: #FDD9BA; font-size: 10px; letter-spacing: .1em; max-width: 92px; }
+.board .s1 { left: 10px; top: 318px; }
+.board .s2 { left: 10px; top: 404px; }
+.board .s3 { right: 10px; top: 262px; }
+.board .s4 { right: 10px; top: 348px; }
+.board .gear { top: calc(2px + var(--safe-t)); }
+
+/* rivers page: Countries button beside the sort buttons */
+.segbtn { margin: 8px 0 0 6px; vertical-align: top; padding: 7px 12px; }
+
+/* countries: smaller cards, four to a row */
+.cgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0; }
+.ccard2 { background: var(--card); border-radius: 14px; box-shadow: 0 2px 10px rgba(23,50,42,.06); padding: 12px 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; text-decoration: none; color: var(--ink); min-height: 74px; }
+.ccard2 b { font: 800 15px/1.15 Bricolage, Inter, sans-serif; color: var(--org); overflow-wrap: anywhere; }
+.ccard2 span { margin-top: 4px; font-size: 12.5px; color: var(--ink-soft); }
+.ccard2.unset b { color: var(--ink-soft); }
+@media (max-width: 360px) { .cgrid { grid-template-columns: repeat(3, 1fr); } }
+
+/* river page: folding sections */
+details.fold > summary { list-style: none; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary h2 { margin: 18px 0 8px; }
+details.fold > summary .chev { margin-top: 8px; transition: transform .15s; }
+details.fold[open] > summary .chev { transform: rotate(90deg); }
+details.fold > summary .muted { font: 600 15px Inter, sans-serif; }
+
+/* tide curves: springs and neaps solid, mid dashed */
+#chart .curve.neap { stroke: #5E95B8; stroke-width: 2; stroke-dasharray: none; }
+#chart .curve.mid { fill: none; stroke: #4A86AE; stroke-width: 1.8; stroke-dasharray: 6 4; }
+#chart .cname.mid { fill: #3F78A0; }
+.chip.tide.mid { background: #B9D8EA; }
+
+/* photo dots back to full size; gauges purple so they don't look like photos */
+.wl-photo span { width: 18px; height: 18px; margin: -9px 0 0 -9px; border-width: 2px; }
+.wl-photo svg { width: 9px; height: 9px; }
+.wl-gauge .gpin, .gnum { background: #6B4C9A; }
+.legend i.gauge { background: #6B4C9A; }
+.phcard .phmove { display: inline-flex; align-items: center; gap: 4px; }
+.phcard .phmove svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+/* move photo page */
+.mvhead { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
+.mvhead img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; flex: none; }
+.mvhead b { font-family: Bricolage, Inter, sans-serif; }
+.kv .badge.warn { white-space: normal; display: inline-block; margin-top: 4px; }
