@@ -37,7 +37,8 @@ function render() {
   document.body.classList.toggle('homepage', route === 'home' || !screens[route]);
   $$('#nav a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
   updateDot();
-  if (route !== 'add' && route !== 'edit' && route !== 'addc') { app.scrollTop = 0; window.scrollTo(0, 0); }
+  if (route !== 'add' && route !== 'edit' && route !== 'addc') app.scrollTop = 0;
+  resetWindow();
 }
 
 // One-tap setup link:  …/#setup=<web app url>&key=<app key>

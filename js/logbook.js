@@ -113,7 +113,7 @@ function screenBuddy(name) {
 function screenRivers() {
   const sort = store.get(LS.sort, 'recent');
   return topbar('Rivers / Waters', '') + `<div class="wrap">
-    <input class="search" id="rq" placeholder="Search rivers, lakes, waterways and coasts" oninput="filterRivers()">
+    <input class="search" id="rq" placeholder="Search rivers, sections, lakes and coasts" oninput="filterRivers()">
     <div class="seg">${[['recent', 'Recent'], ['most', 'Most paddled'], ['az', 'A–Z']].map(([k, l]) =>
       `<button class="${sort === k ? 'on' : ''}" onclick="setRiverSort('${k}')">${l}</button>`).join('')}</div>
     <a class="btn small ghost segbtn" href="#countries">Countries</a>
@@ -123,13 +123,15 @@ function afterRivers() { filterRivers(); }
 window.setRiverSort = k => { store.set(LS.sort, k); render(); };
 window.filterRivers = function () {
   const q = ($('#rq') && $('#rq').value || '').toLowerCase(), sort = store.get(LS.sort, 'recent');
-  let rs = riverIndex(entries()).filter(r => r.name.toLowerCase().includes(q));
+  // matches a river's name or any of its sections
+  let rs = riverIndex(entries()).map(r => { r.hit = !q || r.name.toLowerCase().includes(q) ? '' : Array.from(r.sections).find(s => s.toLowerCase().includes(q)) || null; return r; })
+    .filter(r => r.hit !== null);
   if (sort === 'az') rs.sort((a, b) => a.name.localeCompare(b.name));
   else if (sort === 'most') rs.sort((a, b) => b.entries.length - a.entries.length || a.name.localeCompare(b.name));
   else rs.sort((a, b) => (b.last || 0) - (a.last || 0));
   $('#riverList').innerHTML = rs.map(r => `<li><a class="row" href="#river/${enc(r.name)}">
       <div class="grow"><div class="t">${esc(r.name)}</div>
-      <div class="s">${r.entries.length} ${r.entries.length === 1 ? 'trip' : 'trips'} · last ${fmtDate(r.last)}</div></div>
+      <div class="s">${r.hit ? 'Section: ' + esc(r.hit) + ' · ' : ''}${r.entries.length} ${r.entries.length === 1 ? 'trip' : 'trips'} · last ${fmtDate(r.last)}</div></div>
       ${ICON.chev}</a></li>`).join('') || '<div class="empty">Nothing matches</div>';
 };
 
@@ -467,8 +469,7 @@ function screenForm(id, candId) {
       ${ta('levelComments', 'Conditions', 'Good level, few scrapes – or sea state, swell, wind against tide')}
       ${ta('notes', 'Notes', 'How it went, lines, swims, lessons…')}
       ${ta('putInNotes', 'Put-in notes for this trip', '')}
-      ${ta('takeOutNotes', 'Take-out notes for this trip', '')}
-      <label>Country</label><input id="f_country" list="dl_countries" value="${esc(v.country || '')}" placeholder="Filled in automatically if left blank" autocomplete="off">`;
+      ${ta('takeOutNotes', 'Take-out notes for this trip', '')}`;
   return topbar(editing ? 'Edit paddle' : 'Log a paddle', editing ? 'trip/' + id : (cand ? 'cand/' + cand.id : 'home')) + `<div class="wrap form" id="paddleForm">
     ${!editing && draft ? '<div class="banner"><div class="grow">Carrying on from an unsaved draft.</div><button class="btn small ghost" onclick="clearDraft()">Start fresh</button></div>' : ''}
     ${cand ? `<div class="banner green"><div class="grow">From ${esc(cand.cal || cand.folder || 'your photos')}. Check the date and river.</div></div>` : ''}
@@ -483,6 +484,7 @@ function screenForm(id, candId) {
     ${timeField('start', 'Start time', v.start)}
     ${placeField('out', 'Take out', v.takeOutPlace)}
     ${timeField('finish', 'Finish time', v.finish)}
+    ${countryField(v.country, ents)}
     <div id="gaugeBlock"${FORM.tide ? ' hidden' : ''}>
       <label>Gauge</label><input id="f_gauge" list="dl_gauges" value="${esc(v.gauge || '')}" oninput="gaugeTyped()" autocomplete="off" placeholder="Tap one below or type">
       <div class="chips" id="gaugeChips"></div>
@@ -511,10 +513,21 @@ function screenForm(id, candId) {
     <datalist id="dl_tideplaces">${tidePlaces.map(r => `<option value="${esc(r)}">`).join('')}</datalist>
     <datalist id="dl_gauges">${gauges.map(r => `<option value="${esc(r)}">`).join('')}</datalist>
     <datalist id="dl_sections"></datalist>
-    <datalist id="dl_countries">${Array.from(new Set(ents.map(x => String(x.country || '').trim()).filter(Boolean))).sort().map(c => `<option value="${esc(c)}">`).join('')}</datalist>
     <datalist id="dl_buddies">${buddyCounts(ents).slice(0, 30).map(([n]) => n).sort((a, b) => a.localeCompare(b)).map(n => `<option value="${esc(n)}">`).join('')}</datalist>
   </div>`;
 }
+// Country as a drop-down: iPhones offer address autofill for any typed box labelled Country, but never for a drop-down
+function countryField(cur, ents) {
+  cur = String(cur || '').trim();
+  const cs = Array.from(new Set(ents.map(x => String(x.country || '').trim()).filter(Boolean).concat(cur ? [cur] : []))).sort();
+  return `<label for="f_ctry">Country</label><select id="f_ctry" onchange="ctryChanged()">
+      <option value=""${cur ? '' : ' selected'}>Fill in automatically</option>
+      ${cs.map(c => `<option value="${esc(c)}"${c === cur ? ' selected' : ''}>${esc(c)}</option>`).join('')}
+      <option value="__other">Other…</option></select>
+    <input id="f_ctryOther" hidden placeholder="Type the country" autocomplete="off" autocorrect="off" spellcheck="false">`;
+}
+window.ctryChanged = function () { const o = $('#f_ctryOther'); o.hidden = $('#f_ctry').value !== '__other'; if (!o.hidden) o.focus(); saveDraft(); };
+
 function afterForm() {
   sectionsList(); drawPaddlers(); drawGauges(); showNow(); modelsList();
   ['level', 'flow'].forEach(k => { const el = $('#f_' + k); el && el.addEventListener('input', drawGauges); });
@@ -643,7 +656,8 @@ function collectForm() {
     model: val('model'), alsoOn: $$('#alsoBox input').map(i => i.value.trim()).filter(Boolean).join(' / '),
     start: val('start'), finish: val('finish'), weather: val('weather'), tide: joinTide(val('hw'), val('tidePlace')), gauge: val('gauge'),
     level: val('level'), flow: val('flow'), levelComments: val('levelComments'), notes: val('notes'),
-    putInNotes: val('putInNotes'), takeOutNotes: val('takeOutNotes'), country: val('country'), newPlaces: []
+    putInNotes: val('putInNotes'), takeOutNotes: val('takeOutNotes'),
+    country: val('ctry') === '__other' ? val('ctryOther') : val('ctry'), newPlaces: []
   };
   const newPlace = w => {
     const name = $('#np_' + w + '_name').value.trim();

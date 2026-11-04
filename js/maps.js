@@ -63,7 +63,8 @@ function addExpandButton(map, el) {
         L.DomEvent.stop(ev);
         const big = el.classList.toggle('expanded');
         b.innerHTML = big ? ICON.shrink : ICON.grow; b.title = big ? 'Smaller map' : 'Bigger map';
-        setTimeout(() => { map.invalidateSize(); if (big) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 220);
+        // bring the map up to just below the title bar, so the smaller-map button stays in view
+        setTimeout(() => { map.invalidateSize(); if (big) { const app = $('#app'), bar = $('.topbar'), top = el.getBoundingClientRect().top - (bar ? bar.getBoundingClientRect().bottom : 0) - 8; app.scrollBy({ top, behavior: 'smooth' }); } }, 220);
       });
       return b;
     }
@@ -101,7 +102,7 @@ function afterMap() {
 }
 
 // Gauges on the main map: shown from the same zoom as photos
-const DETAIL_ZOOM = 11;
+const DETAIL_ZOOM = 14;
 function addAllGauges(map) {
   const layer = L.layerGroup();
   allGauges().forEach(g => {

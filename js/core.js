@@ -16,7 +16,7 @@
 
 // Each log (Hugh's, Clarissa's) keeps its own copy on the phone: the page sets WL_NS before loading this file
 // App version, and the oldest sheet script it works fully with (shown on the Settings screen)
-const APP_VERSION = 'v18', NEED_SCRIPT = '2026-11-04b';
+const APP_VERSION = 'v19', NEED_SCRIPT = '2026-11-04b';
 const NS = window.WL_NS || '';
 const ROOT = window.WL_ROOT || '';
 const LS = {
@@ -174,6 +174,16 @@ window.addEventListener('orientationchange', () => setTimeout(checkTurn, 300));
 window.addEventListener('resize', checkTurn);
 screen.orientation && screen.orientation.addEventListener && screen.orientation.addEventListener('change', checkTurn);
 checkTurn();
+
+// iPhone sometimes leaves the whole window shifted up (after the keyboard closes, or a bounce).
+// The page scrolls inside the app area, so the window itself should never move: put it back.
+function resetWindow() { if (window.scrollY || window.scrollX) window.scrollTo(0, 0); }
+const typing = () => { const a = document.activeElement; return a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); };
+document.addEventListener('focusout', () => setTimeout(() => { if (!typing()) resetWindow(); }, 120));
+window.addEventListener('scroll', () => { if (!typing()) resetWindow(); }, { passive: true });
+if (window.visualViewport) window.visualViewport.addEventListener('resize', () => setTimeout(() => { if (!typing()) resetWindow(); }, 120));
+window.addEventListener('pageshow', resetWindow);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resetWindow(); });
 
 let toastT;
 function toast(msg) {

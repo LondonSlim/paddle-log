@@ -41,8 +41,9 @@ function gaugeNow(name) {
   const info = gaugeInfo()[name] || {};
   const txt = Object.values(info).filter(v => typeof v === 'string').join(' ');
   const m = txt.match(/Level\s+(-?\d+(?:\.\d+)?)\s*m/i);
-  if (m) return { level: +m[1], state: 'ok' };
-  return { level: null, state: /no recent reading|offline|not read/i.test(txt) ? 'none' : 'unknown' };
+  const f = txt.match(/Flow\s+(-?\d+(?:\.\d+)?)\s*cumecs/i);
+  if (m || f) return { level: m ? +m[1] : null, flow: f ? +f[1] : null, state: 'ok' };
+  return { level: null, flow: null, state: /no recent reading|offline|not read/i.test(txt) ? 'none' : 'unknown' };
 }
 
 // Every gauge with a position, for the main map
