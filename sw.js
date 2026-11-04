@@ -1,6 +1,6 @@
 /* Water Log service worker: keeps the app itself on the phone so it opens with no signal.
  * Bump VERSION whenever app files change so phones pick up the new version. */
-const VERSION = 'wl-v18';
+const VERSION = 'wl-v19';
 const SHELL = [
   './', 'index.html', 'app.css', 'js/core.js', 'js/sync.js', 'js/maps.js', 'js/places.js', 'js/levels.js', 'js/charts.js', 'js/photos.js', 'js/logbook.js', 'js/app.js', 'osgrid.js', 'home1.jpg', 'home2.jpg', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
@@ -10,8 +10,7 @@ const SHELL = [
   'vendor/fonts/inter-latin-400-normal.woff2',
   'vendor/fonts/inter-latin-600-normal.woff2',
   // Clarissa's log: same app, her own start page, colours, photos and icon
-  'clarissa/', 'clarissa/index.html', 'clarissa/theme.css', 'clarissa/app.css',
-  'clarissa/core.js', 'clarissa/sync.js', 'clarissa/maps.js', 'clarissa/places.js', 'clarissa/levels.js', 'clarissa/photos.js', 'clarissa/logbook.js', 'clarissa/app.js', 'clarissa/manifest.webmanifest',
+  'clarissa/', 'clarissa/index.html', 'clarissa/theme.css', 'clarissa/manifest.webmanifest',
   'clarissa/home1.jpg', 'clarissa/home2.jpg', 'clarissa/icons/icon-192.png', 'clarissa/icons/icon-512.png', 'clarissa/icons/apple-touch-icon.png'
 ];
 const TILES = 'wl-tiles';

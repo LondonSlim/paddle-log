@@ -531,3 +531,15 @@ details.fold > summary .muted { font: 600 15px Inter, sans-serif; }
 .mvhead img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; flex: none; }
 .mvhead b { font-family: Bricolage, Inter, sans-serif; }
 .kv .badge.warn { white-space: normal; display: inline-block; margin-top: 4px; }
+
+/* ---------- v19 ---------- */
+.board .gear { top: calc(-4px + var(--safe-t)); }
+html { overflow: hidden; }
+.mapbox.expanded { height: 58vh !important; }
+#chart .dot.other { fill: #fff; stroke: #2B2B26; stroke-width: 2; }
+#chart .dot.bar { stroke: #fff; stroke-width: 1.5; }
+#chart .dot.bar.other { fill: #fff; stroke: #2B2B26; }
+#chart .dot.bar.sel { fill: #fff; stroke: #1F4E9E; stroke-width: 3; }
+#chart .axis .unit { font-size: 10px; }
+.seg.mini { margin: 0 0 6px; justify-self: start; }
+.seg.mini button { padding: 4px 10px; font-size: 13px; }
