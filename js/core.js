@@ -15,6 +15,8 @@
 'use strict';
 
 // Each log (Hugh's, Clarissa's) keeps its own copy on the phone: the page sets WL_NS before loading this file
+// App version, and the oldest sheet script it works fully with (shown on the Settings screen)
+const APP_VERSION = 'v18', NEED_SCRIPT = '2026-11-04b';
 const NS = window.WL_NS || '';
 const ROOT = window.WL_ROOT || '';
 const LS = {

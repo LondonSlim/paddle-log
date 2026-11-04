@@ -128,7 +128,9 @@ function screenSetup(msg) {
       <div class="card flat"><div class="kv">
         <dt>Paddles saved</dt><dd>${S.data ? S.data.entries.length : 0}</dd>
         <dt>Last updated</dt><dd>${S.data ? fmtDate(new Date(S.data.loadedAt)) + ' ' + new Date(S.data.loadedAt).toTimeString().slice(0, 5) : '–'}</dd>
-        <dt>Waiting to send</dt><dd>${S.queue.length}</dd></div>
+        <dt>Waiting to send</dt><dd>${S.queue.length}</dd>
+        <dt>App version</dt><dd>${APP_VERSION}</dd>
+        <dt>Sheet script</dt><dd>${S.data && S.data.scriptVersion ? esc(S.data.scriptVersion) : 'Older than 4 Nov 2026'}${!S.data || !S.data.scriptVersion || S.data.scriptVersion < NEED_SCRIPT ? `<br><span class="badge warn">Update needed: deploy the latest Code.gs (${NEED_SCRIPT})</span>` : ''}</dd></div>
         <div class="btnrow"><button class="btn small ghost" onclick="refreshNow(this)">${ICON.refresh} Refresh now</button>
         ${S.queue.length ? '<button class="btn small" onclick="sendNow(this)">Send now</button>' : ''}</div>
         ${S.status ? `<p class="status">${esc(S.status)}</p>` : ''}</div>` : ''}

@@ -23,7 +23,8 @@ function render() {
     add: [() => screenForm(null), afterForm], edit: [screenForm, afterForm], finish: [screenFinish],
     place: [screenPlace, afterPlace], setup: [screenSetup], map: [screenMap, afterMap],
     review: [screenReview], cand: [screenCand], addc: [a => screenForm(null, a), afterForm],
-    countries: [screenCountries], levels: [screenLevels, afterLevels], tides: [screenTides, afterTides]
+    countries: [screenCountries], levels: [screenLevels, afterLevels], tides: [screenTides, afterTides],
+    movephoto: [screenMovePhoto, afterMovePhoto]
   };
   if (VIEW && VIEW.hash !== location.hash) closeViewer();
   if (S.statusRoute !== location.hash) { S.status = ''; S.statusRoute = location.hash; }
@@ -32,11 +33,11 @@ function render() {
   if (charting !== document.body.classList.contains('charting')) { document.body.classList.toggle('charting', charting); freeTurn(charting); }
   app.innerHTML = scr(route === 'add' ? undefined : arg);
   if (after) after(arg);
-  const tab = { countries: 'home', levels: 'rivers', tides: 'rivers', home: 'home', trips: 'home', buddies: 'home', buddy: 'home', rivers: 'rivers', river: 'rivers', place: 'rivers', add: 'add', edit: 'finish', finish: 'finish', trip: 'home', map: 'map', review: 'finish', cand: 'finish', addc: 'finish' }[route] || 'home';
+  const tab = { movephoto: 'map', countries: 'home', levels: 'rivers', tides: 'rivers', home: 'home', trips: 'home', buddies: 'home', buddy: 'home', rivers: 'rivers', river: 'rivers', place: 'rivers', add: 'add', edit: 'finish', finish: 'finish', trip: 'home', map: 'map', review: 'finish', cand: 'finish', addc: 'finish' }[route] || 'home';
   document.body.classList.toggle('homepage', route === 'home' || !screens[route]);
   $$('#nav a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
   updateDot();
-  if (route !== 'add' && route !== 'edit' && route !== 'addc') window.scrollTo(0, 0);
+  if (route !== 'add' && route !== 'edit' && route !== 'addc') { app.scrollTop = 0; window.scrollTo(0, 0); }
 }
 
 // One-tap setup link:  …/#setup=<web app url>&key=<app key>

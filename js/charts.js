@@ -67,10 +67,12 @@ function sectionsCard(name, list) {
     if (trows.length !== 1 || trows[0][1] !== all.length) trows.push([ALL, all.length, 'tides']);
   }
   rows.push(...lrows, ...trows);
-  if (!rows.length) return '';
-  return `<h2>Sections</h2><div class="card secs">${rows.map(([k, n, kind, gauge]) => `<div class="secrow">
+  if (!rows.length) return null;
+  // "Levels paddled" – the levels you paddled at, not today's level
+  const title = lrows.length && trows.length ? 'Levels and tides paddled' : lrows.length ? 'Levels paddled' : 'Tides paddled';
+  return { title, n: rows.length, html: `<div class="card secs">${rows.map(([k, n, kind, gauge]) => `<div class="secrow">
       <div class="grow"><div class="t">${esc(secName(k))}</div><div class="s">${kind === 'levels' ? esc(gauge) + ' gauge' : 'Tide'} · ${n} ${n === 1 ? 'trip' : 'trips'}</div></div>
-      <a class="btn small${kind === 'tides' ? ' tidebtn' : ''}" href="#${chartHash(kind, name, k)}">${kind === 'levels' ? ICON.chart + ' Levels' : ICON.wave + ' Tides'}</a></div>`).join('')}</div>`;
+      <a class="btn small${kind === 'tides' ? ' tidebtn' : ''}" href="#${chartHash(kind, name, k)}">${kind === 'levels' ? ICON.chart + ' Levels' : ICON.wave + ' Tides'}</a></div>`).join('')}</div>` };
 }
 ICON.chart = '<svg viewBox="0 0 24 24"><path d="M3 20h18M5 16l4-5 4 3 6-8"/></svg>';
 
@@ -182,7 +184,7 @@ function drawLevels() {
 
 /* ---------- stylised tide curve ---------- */
 
-const PERIOD = 12.42, NEAP = 0.5;
+const PERIOD = 12.42, RANGE = { springs: 1, mid: 0.75, neaps: 0.5 }; // neap range about half the spring range
 const cosi = (a, b, t) => a + (b - a) * (1 - Math.cos(Math.PI * t)) / 2;
 const keyed = K => h => { for (let i = 0; i < K.length - 1; i++) { const [h0, v0] = K[i], [h1, v1] = K[i + 1]; if (h >= h0 && h <= h1) return cosi(v0, v1, (h - h0) / (h1 - h0)); } return h < K[0][0] ? K[0][1] : K[K.length - 1][1]; };
 // Curves by hours from HW: 0 is low water, 1 is high water. lw is where low water falls before HW.
@@ -203,15 +205,21 @@ function tidePort(e) {
   if (!all) return '';
   return s.slice(s.lastIndexOf(all[all.length - 1]) + all[all.length - 1].length).replace(/^[\s,]+/, '').trim();
 }
-// Springs or neaps: your own note in the tide if there is one, otherwise from the moon (springs about 1–2 days after new and full moon)
+// Springs, mid or neaps: your own note (Tide or Conditions) if there is one, otherwise from the moon.
+// Springs run about 1–2 days after new and full moon: the third of each half-cycle around them is springs,
+// the third around the quarter moons is neaps, and the rest is mid.
+const TIDE_LABEL = { springs: 'Springs', mid: 'Mid', neaps: 'Neaps' };
 function tideState(e) {
-  if (/spring/i.test(e.tide || '')) return 'springs';
-  if (/neap/i.test(e.tide || '')) return 'neaps';
-  const d = e._d; if (!d) return 'springs';
+  const note = (e.tide || '') + ' ' + (e.levelComments || '');
+  if (/\bmid\b|mid[- ](range|tide)|between springs and neaps/i.test(note)) return 'mid';
+  if (/closer?\s+(to\s+)?springs?/i.test(note)) return 'springs';
+  if (/neap/i.test(note)) return 'neaps';
+  if (/spring/i.test(note)) return 'springs';
+  const d = e._d; if (!d) return 'mid';
   const SYN = 29.530588853, NM = Date.UTC(2000, 0, 6, 18, 14) / 864e5;
   const a = ((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 12) / 864e5 - NM) % SYN + SYN) % SYN, half = SYN / 2;
   const q = ((a - 1.5) % half + half) % half, dist = Math.min(q, half - q);
-  return dist <= half / 4 ? 'springs' : 'neaps';
+  return dist <= half / 6 ? 'springs' : dist >= half / 3 ? 'neaps' : 'mid';
 }
 
 function tideSetup(river, key) {
@@ -253,7 +261,7 @@ function tideCard() {
   const s = tideSetup(CH.river, CH.key);
   if (CH.group && CH.group.length > 1) {
     el.innerHTML = `<div class="txt"><div class="when">${CH.group.length} trips start here</div>
-      <div class="glist">${CH.group.map((e, i) => { const st = tideState(e); return `<button data-li="${i}" class="${e === CH.sel ? 'on' : ''}"><span>${esc(fmtDate(e._d))}</span><span class="num">${esc(e.start)}${e.finish ? '–' + esc(e.finish) : ''}</span><span class="chip tide ${st}">${st === 'springs' ? 'Springs' : 'Neaps'}</span></button>`; }).join('')}</div></div>`;
+      <div class="glist">${CH.group.map((e, i) => { const st = tideState(e); return `<button data-li="${i}" class="${e === CH.sel ? 'on' : ''}"><span>${esc(fmtDate(e._d))}</span><span class="num">${esc(e.start)}${e.finish ? '–' + esc(e.finish) : ''}</span><span class="chip tide ${st}">${TIDE_LABEL[st]}</span></button>`; }).join('')}</div></div>`;
     $$('[data-li]', el).forEach(b => b.onclick = () => { CH.fromGroup = CH.group; CH.sel = CH.group[+b.dataset.li]; CH.group = null; drawTides(); tideCard(); });
     return;
   }
@@ -261,7 +269,7 @@ function tideCard() {
   const a = s.off(e, 'st'), b = s.off(e, 'fi'), st = tideState(e), r = tideRef(e);
   const conv = (r.type === 'LW') !== (s.ref === 'LW') ? ` (logged as ${esc(r.txt)})` : '';
   const back = CH.fromGroup ? `<button class="linkbtn" id="gback">‹ ${CH.fromGroup.length} trips here</button>` : '';
-  el.innerHTML = tripCard(e, `<div class="when"><span>${esc(fmtDate(e._d))}</span><span class="num">${esc(e.start)}${e.finish ? '–' + esc(e.finish) : ''}</span><span class="chip tide ${st}">${st === 'springs' ? 'Springs' : 'Neaps'}</span></div>
+  el.innerHTML = tripCard(e, `<div class="when"><span>${esc(fmtDate(e._d))}</span><span class="num">${esc(e.start)}${e.finish ? '–' + esc(e.finish) : ''}</span><span class="chip tide ${st}">${TIDE_LABEL[st]}</span></div>
     <div class="where num">${s.ref.replace('1', '')} ${hm(a)}${b != null ? ' to ' + hm(b) : ''}${conv}</div>`, back);
   const gb = $('#gback'); if (gb) gb.onclick = () => { CH.group = CH.fromGroup; CH.fromGroup = null; drawTides(); tideCard(); };
 }
@@ -273,11 +281,12 @@ function drawTides() {
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   const m = { l: 30, r: 10, t: 30, b: 26 };
   const x = h => m.l + (h - h0) / (h1 - h0) * (W - m.l - m.r), y = v => m.t + (1 - v) * (H - m.t - m.b), yb = y(0) + 10;
-  const neapF = h => .5 + (F(h) - .5) * NEAP;
-  const curveOf = e => tideState(e) === 'neaps' ? neapF : F;
+  const scaled = k => h => .5 + (F(h) - .5) * RANGE[k];
+  const CF = { springs: F, mid: scaled('mid'), neaps: scaled('neaps') };
+  const curveOf = e => CF[tideState(e)];
   const sample = (g, a, b, n) => { const p = []; for (let i = 0; i <= n; i++) { const h = a + (b - a) * i / n; p.push([x(h), y(g(h))]); } return p; };
   const pth = p => 'M' + p.map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' L');
-  const sp = sample(F, h0, h1, 240), np = sample(neapF, h0, h1, 240);
+  const sp = sample(F, h0, h1, 240), mp = sample(CF.mid, h0, h1, 240), np = sample(CF.neaps, h0, h1, 240);
   let g = `<path class="seafill" d="${pth(sp)} L${x(h1)},${yb} L${x(h0)},${yb} Z"/>`;
   const sel = CH.sel;
   if (sel) { const G = curveOf(sel), a = Math.max(h0, s.off(sel, 'st')), b = Math.min(h1, s.off(sel, 'fi') != null ? s.off(sel, 'fi') : a);
@@ -290,7 +299,7 @@ function drawTides() {
     if (k.k === 'hw') mk += `<line class="hwline" x1="${X}" x2="${X}" y1="${m.t - 4}" y2="${yb}"/><text class="hwtxt" x="${X}" y="${m.t - 10}" text-anchor="middle">${k.l}</text>`;
     else { const est = k.k === 'est', ty = est ? m.t + 16 : m.t + (H - m.t - m.b) * .42, anc = X > W * .7 ? 'end' : 'start', tx = anc === 'end' ? X - 4 : X + 4;
       mk += `<line class="${est ? 'est' : 'note'}line" x1="${X}" x2="${X}" y1="${est ? m.t - 4 : ty + 4}" y2="${yb}"/><text class="${est ? 'est' : 'note'}txt" x="${tx}" y="${ty}" text-anchor="${anc}">${esc(k.l)}</text>`; } });
-  const lh = h0 + .35, cl = `<text class="cname" x="${x(lh)}" y="${y(F(lh)) - 7}">Springs</text><text class="cname neap" x="${x(lh)}" y="${y(neapF(lh)) - 7}">Neaps</text>`;
+  const lh = h0 + .35, cl = ['springs', 'mid', 'neaps'].map(k => `<text class="cname ${k}" x="${x(lh)}" y="${y(CF[k](lh)) - 7}">${TIDE_LABEL[k]}</text>`).join('');
   // dots on the springs or neaps curve; trips that would overlap become one numbered dot
   const pts = s.trips.map(e => { const h = s.off(e, 'st'); return { e, h, cx: x(h), cy: y(curveOf(e)(h)) }; }).filter(p => p.h >= h0 && p.h <= h1).sort((a, b) => a.cx - b.cx);
   const groups = [];
@@ -304,7 +313,7 @@ function drawTides() {
     dots += `<g tabindex="0" role="button" data-g="${gi}" aria-label="${esc(lbl)}"><circle class="hit" cx="${G.cx}" cy="${G.cy}" r="16"/>` +
       (n > 1 ? `<circle class="grp${on ? ' sel' : ''}" cx="${G.cx}" cy="${G.cy}" r="10"/><text class="grpn" x="${G.cx}" y="${G.cy + 4}" text-anchor="middle">${n}</text>`
         : `<circle class="dot${on ? ' sel' : ''}" cx="${G.cx}" cy="${G.cy}" r="${on ? 7 : 5.5}"/>`) + '</g>'; });
-  svg.innerHTML = g + `<g class="axis">${ax}</g><path class="curve" d="${pth(sp)}"/><path class="curve neap" d="${pth(np)}"/>` + mk + cl + dots;
+  svg.innerHTML = g + `<g class="axis">${ax}</g><path class="curve" d="${pth(sp)}"/><path class="curve mid" d="${pth(mp)}"/><path class="curve neap" d="${pth(np)}"/>` + mk + cl + dots;
   $$('g[data-g]', svg).forEach(el => {
     const G = groups[+el.dataset.g];
     const pick = () => {

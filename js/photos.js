@@ -211,7 +211,8 @@ window.closeMovePhoto = closeMovePhoto;
 // Photo markers: a small blue camera dot, shown on the three most zoomed-in map levels.
 // Built as an HTML marker with a generous invisible tap area so it is easy to hit on a phone.
 const photoIcon = () => L.divIcon({ className: 'wl-photo', html: '<span><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>', iconSize: [32, 32], iconAnchor: [16, 16] });
-function addPhotoDots(map, list) {
+// minZoom: the zoom from which photos show (main map); otherwise the three most zoomed-in levels
+function addPhotoDots(map, list, minZoom) {
   const pts = list.filter(p => p.lat != null && p.lon != null && isFinite(p.lat) && isFinite(p.lon));
   if (!pts.length) return;
   const group = L.layerGroup();
@@ -224,7 +225,8 @@ function addPhotoDots(map, list) {
       const trip = entries().find(e => e.date === p.date && onWater(e, p.river));
       const card = document.createElement('div'); card.className = 'phcard';
       card.innerHTML = `<button class="phcard-img" aria-label="Show photo"><img src="${photoUrl(p.id, 400)}" alt=""></button>
-        ${trip ? `<a href="#trip/${trip.row || 'p:' + trip.pendingUid}">${esc(tripLabel(p))}</a>` : `<span>${esc(tripLabel(p))}</span>`}`;
+        ${trip ? `<a href="#trip/${trip.row || 'p:' + trip.pendingUid}">${esc(tripLabel(p))}</a>` : `<span>${esc(tripLabel(p))}</span>`}
+        ${p.id ? `<a class="phmove" href="#movephoto/${enc(p.id)}">${ICON.pin} Move photo</a>` : ''}`;
       card.querySelector('button').addEventListener('click', ev => {
         ev.stopPropagation(); m.closePopup();
         openViewer(same, Math.max(0, same.findIndex(q => q.id === p.id)));
@@ -233,7 +235,39 @@ function addPhotoDots(map, list) {
     }, { maxWidth: 220, minWidth: 180 });
     group.addLayer(m);
   });
-  const show = () => { const on = map.getZoom() >= map.getMaxZoom() - 2; if (on && !map.hasLayer(group)) group.addTo(map); if (!on && map.hasLayer(group)) map.removeLayer(group); };
+  const show = () => { const on = map.getZoom() >= (minZoom != null ? minZoom : map.getMaxZoom() - 2); if (on && !map.hasLayer(group)) group.addTo(map); if (!on && map.hasLayer(group)) map.removeLayer(group); };
   map.on('zoomend', show); show();
 }
 
+
+
+/* ---------- Move photo page (from the photo card on a map) ---------- */
+function screenMovePhoto(id) {
+  const p = livePhotos().find(x => x.id === id);
+  if (!p) return topbar('Move photo', 'map') + '<div class="wrap empty">Photo not found – it may have been deleted.</div>';
+  return topbar('Move photo', 'map') + `<div class="wrap">
+    <div class="mvhead"><img src="${photoUrl(p.id, 400)}" alt=""><div><b>${esc(tripLabel(p))}</b>
+      <div class="muted" id="mp_info">${p.moved ? 'Moved by hand. Tap the map to move it again.' : p.lat != null ? 'Geotag shown. Tap the map where it was really taken.' : 'No geotag. Tap the map where it was taken.'}</div></div></div>
+    <div class="mapbox tall" id="mpMap"></div>
+    <div class="btnrow"><button class="btn" id="mp_save" disabled onclick="saveMovePage()">Save position</button>
+      ${p.moved ? '<button class="btn ghost" onclick="resetMovePage()">Back to geotag</button>' : ''}
+      <button class="btn ghost" onclick="history.back()">Cancel</button></div></div>`;
+}
+function afterMovePhoto(id) {
+  const p = livePhotos().find(x => x.id === id), el = $('#mpMap'); if (!p || !el) return;
+  const trip = entries().find(e => e.date === p.date && onWater(e, p.river));
+  const pl = trip && placeByName()[trip.putInPlace];
+  const start = p.lat != null ? [p.lat, p.lon] : pl && pl.latN != null ? [pl.latN, pl.lonN] : null;
+  const map = makeMap(el, [], { zoom: 16 }); if (!map) return;
+  if (start) map.setView(start, 16);
+  let mk = start ? L.marker(start, { icon: photoIcon() }).addTo(map) : null;
+  MOVEPG = { id, lat: null, lon: null };
+  map.on('click', ev => {
+    MOVEPG.lat = +ev.latlng.lat.toFixed(6); MOVEPG.lon = +ev.latlng.lng.toFixed(6);
+    if (mk) mk.setLatLng(ev.latlng); else mk = L.marker(ev.latlng, { icon: photoIcon() }).addTo(map);
+    $('#mp_save').disabled = false; $('#mp_info').textContent = 'New position: ' + MOVEPG.lat.toFixed(5) + ', ' + MOVEPG.lon.toFixed(5);
+  });
+}
+let MOVEPG = null;
+window.saveMovePage = function () { if (!MOVEPG || MOVEPG.lat == null) return; queueMove(MOVEPG.id, MOVEPG.lat, MOVEPG.lon); toast('Photo moved'); history.back(); };
+window.resetMovePage = function () { if (!MOVEPG) return; queueMove(MOVEPG.id, '', ''); toast('Photo back at its geotag'); history.back(); };

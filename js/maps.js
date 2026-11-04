@@ -96,12 +96,12 @@ function afterMap() {
   });
   const map = makeMap(el, pts, { maxZoom: 8 });
   if (!map) return;
-  addPhotoDots(map, livePhotos());
+  addPhotoDots(map, livePhotos(), DETAIL_ZOOM);
   addAllGauges(map);
 }
 
-// Gauges on the main map, with a button to hide or show them
-const LS_GAUGES = NS + 'wl_mapgauges';
+// Gauges on the main map: shown from the same zoom as photos
+const DETAIL_ZOOM = 11;
 function addAllGauges(map) {
   const layer = L.layerGroup();
   allGauges().forEach(g => {
@@ -115,22 +115,6 @@ function addAllGauges(map) {
       `<br><a href="${gaugeLink(g.name)}" target="_blank" rel="noopener">Live level</a>`);
     layer.addLayer(m);
   });
-  let on = store.get(LS_GAUGES, true);
-  if (on) layer.addTo(map);
-  const Ctl = L.Control.extend({
-    options: { position: 'topleft' },
-    onAdd() {
-      const b = L.DomUtil.create('button', 'mapsize gtoggle' + (on ? ' on' : ''));
-      b.type = 'button'; b.title = 'Show or hide gauges'; b.textContent = 'G';
-      L.DomEvent.disableClickPropagation(b);
-      L.DomEvent.on(b, 'click', ev => {
-        L.DomEvent.stop(ev); on = !on; store.set(LS_GAUGES, on);
-        if (on) layer.addTo(map); else map.removeLayer(layer);
-        b.classList.toggle('on', on); toast(on ? 'Gauges shown' : 'Gauges hidden');
-      });
-      return b;
-    }
-  });
-  new Ctl().addTo(map);
+  const show = () => { const on = map.getZoom() >= DETAIL_ZOOM; if (on && !map.hasLayer(layer)) layer.addTo(map); if (!on && map.hasLayer(layer)) map.removeLayer(layer); };
+  map.on('zoomend', show); show();
 }
-

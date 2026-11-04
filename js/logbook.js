@@ -38,7 +38,6 @@ function screenTrips(year) {
   }
   return topbar('Trips', 'home') + `<div class="wrap">
     <input class="search" id="tq" placeholder="Search river, place, paddler…" oninput="filterTrips()">
-    <div class="btnrow"><a class="btn small ghost" href="#countries">Countries</a></div>
     <div id="tripList">${yearCards(list)}</div></div>`;
 }
 function yearCards(list) {
@@ -51,8 +50,8 @@ function yearCards(list) {
     return `<a class="ycard" href="#trips/${enc(y)}"><b>${esc(y)}</b><span>${n} ${n === 1 ? 'trip' : 'trips'}</span><small>${rv} ${rv === 1 ? 'water' : 'waters'}</small></a>`;
   }).join('')}</div>`;
 }
-function tripRows(list) {
-  return list.map(e => `<li><a class="row" href="#trip/${e.row || 'p:' + e.pendingUid}">
+function tripRows(list, target) {
+  return list.map(e => `<li><a class="row" href="#${target || 'trip'}/${e.row || 'p:' + e.pendingUid}">
       ${dateBox(e._d)}
       <div class="grow"><div class="t">${esc(watersOf(e).join(' + '))}${e.section ? ' · ' + esc(e.section) : ''}</div>
       <div class="s">${esc([e.putInPlace, e.paddlers].filter(Boolean).join(' · ') || e.craft || '')}</div></div>
@@ -65,9 +64,16 @@ window.filterTrips = function () {
   $('#tripList').innerHTML = `<ul class="list">${tripRows(list)}</ul>`;
 };
 
+const NOCOUNTRY = '_none';
 // Countries: one card per country (like the years); tap one for its trips, newest first
 function screenCountries(country) {
   const list = entries();
+  if (country === NOCOUNTRY) {
+    const cl = list.filter(e => !String(e.country || '').trim());
+    return topbar('Country not set · ' + cl.length, 'countries') + `<div class="wrap">
+      <p class="muted">Tap a trip to add its country.</p>
+      <ul class="list">${tripRows(cl, 'edit')}</ul></div>`;
+  }
   if (country) {
     const cl = list.filter(e => String(e.country || '').trim() === country);
     return topbar(country + ' · ' + cl.length + (cl.length === 1 ? ' trip' : ' trips'), 'countries') + `<div class="wrap">
@@ -76,11 +82,11 @@ function screenCountries(country) {
   const cs = {};
   list.forEach(e => { const c = String(e.country || '').trim(); if (c) (cs[c] = cs[c] || []).push(e); });
   const keys = Object.keys(cs).sort((a, b) => cs[b].length - cs[a].length || a.localeCompare(b));
+  const none = list.filter(e => !String(e.country || '').trim()).length;
+  const card = (href, name, n, cls) => `<a class="ccard2${cls ? ' ' + cls : ''}" href="${href}"><b>${esc(name)}</b><span>${n} ${n === 1 ? 'trip' : 'trips'}</span></a>`;
   return topbar('Countries', 'home') + `<div class="wrap">
-    ${keys.length ? `<div class="years">${keys.map(c => {
-      const n = cs[c].length, rv = new Set([].concat(...cs[c].map(watersOf))).size;
-      return `<a class="ycard country" href="#countries/${enc(c)}"><b>${esc(c)}</b><span>${n} ${n === 1 ? 'trip' : 'trips'}</span><small>${rv} ${rv === 1 ? 'water' : 'waters'}</small></a>`;
-    }).join('')}</div>` : '<div class="empty">No countries recorded yet</div>'}</div>`;
+    ${keys.length || none ? `<div class="cgrid">${keys.map(c => card('#countries/' + enc(c), c, cs[c].length)).join('')}
+      ${none ? card('#countries/' + enc(NOCOUNTRY), 'Country not set', none, 'unset') : ''}</div>` : '<div class="empty">No countries recorded yet</div>'}</div>`;
 }
 
 function screenBuddies() {
@@ -110,6 +116,7 @@ function screenRivers() {
     <input class="search" id="rq" placeholder="Search rivers, lakes, waterways and coasts" oninput="filterRivers()">
     <div class="seg">${[['recent', 'Recent'], ['most', 'Most paddled'], ['az', 'A–Z']].map(([k, l]) =>
       `<button class="${sort === k ? 'on' : ''}" onclick="setRiverSort('${k}')">${l}</button>`).join('')}</div>
+    <a class="btn small ghost segbtn" href="#countries">Countries</a>
     <ul class="list" id="riverList"></ul></div>`;
 }
 function afterRivers() { filterRivers(); }
@@ -132,19 +139,20 @@ function screenRiver(name) {
   const ps = riverPlaces(name, list);
   const gs = riverGaugeList(name, list);
   const yrs = r.first ? (r.first.getFullYear() === r.last.getFullYear() ? r.first.getFullYear() : r.first.getFullYear() + '–' + r.last.getFullYear()) : '';
+  const fold = (title, n, body) => `<details class="fold"><summary><h2>${title}${n != null ? ` <span class="muted">(${n})</span>` : ''}</h2>${ICON.chev}</summary>${body}</details>`;
+  const sec = sectionsCard(name, list);
   return topbar(name, 'rivers') + `<div class="wrap">
     <div class="meta"><button class="badge linkish" onclick="document.getElementById('tripsLevels').scrollIntoView({behavior:'smooth'})">${list.length} ${list.length === 1 ? 'trip' : 'trips'}</button>${yrs ? `<span class="badge grey">${yrs}</span>` : ''}</div>
-    ${sectionsCard(name, list)}
     <div class="mapbox small" id="riverMap"></div>
     <div class="legend"><span><i style="background:#6DB33F"></i>Access point</span>${gs.some(g => g.lat != null) ? '<span><i class="gauge"></i>Gauge</span>' : ''}<span><i class="ph"></i>Photo</span></div>
-    <h2>Access points</h2>
-    ${ps.length ? `<div class="updown">Top of the river first. Tap a place for details.</div>
-      <div class="places">${ps.map(placeRow).join('')}</div>` : '<div class="empty">No access points saved yet</div>'}
-    ${gs.length ? `<details class="gdet"><summary><h2>Gauges <span class="muted">(${gs.length})</span></h2>${ICON.chev}</summary><div class="card">${gs.map(g =>
+    ${sec ? fold(sec.title, sec.n, sec.html) : ''}
+    ${fold('Access points', ps.length, ps.length ? `<div class="updown">Top of the river first. Tap a place for details.</div>
+      <div class="places">${ps.map(placeRow).join('')}</div>` : '<div class="empty">No access points saved yet</div>')}
+    ${gs.length ? fold('Gauges', gs.length, `<div class="card">${gs.map(g =>
       `<div class="row" style="box-shadow:none;margin:0;padding:8px 0;cursor:default"><span class="gnum">G${g.n}</span><div class="grow"><div class="t">${esc(g.name)}</div>
         ${(S.data.gauges || {})[g.name] ? '' : '<div class="s">Link searches the web</div>'}</div>
-        <a class="btn small orange" href="${gaugeLink(g.name)}" target="_blank" rel="noopener">${ICON.wave} Live level</a></div>`).join('')}</div></details>` : ''}
-    <h2 id="tripsLevels">Trips and levels</h2>
+        <a class="btn small orange" href="${gaugeLink(g.name)}" target="_blank" rel="noopener">${ICON.wave} Live level</a></div>`).join('')}</div>`) : ''}
+    <h2 id="tripsLevels">Trips</h2>
     <ul class="list">${list.map(e => {
       const lv = levelText(e);
       return `<li><a class="row" href="#trip/${e.row || 'p:' + e.pendingUid}">
@@ -208,7 +216,7 @@ function screenTrip(id) {
         ${placeLine('Put in', e.putInPlace)}
         ${placeLine('Take out', e.takeOutPlace)}
         ${e.weather ? `<dt>Weather</dt><dd>${esc(e.weather)}</dd>` : ''}
-        ${e.tide ? `<dt>Tide</dt><dd>${esc(e.tide)}</dd>` : ''}
+        ${e.tide ? `<dt>Tide</dt><dd>${esc(e.tide)}${tideRef(e) ? ` <span class="chip tide ${tideState(e)}">${TIDE_LABEL[tideState(e)]}</span>` : ''}</dd>` : ''}
         ${e.gauge ? `<dt>Gauge</dt><dd>${esc(e.gauge)}${lv ? ' – ' + esc(lv) : ''}${e.levelAuto && lv ? ` <span class="badge grey">auto</span><br><small class="muted">${esc(e.levelAuto)}</small>` : ''}${!lv && e.start && autoGauge(e.gauge) ? '<br><small class="muted">Level will be filled in from the gauge</small>' : ''}</dd>` : ''}
         ${e.levelComments ? `<dt>Conditions</dt><dd>${esc(e.levelComments)}</dd>` : ''}
       </dl></div>
@@ -459,7 +467,8 @@ function screenForm(id, candId) {
       ${ta('levelComments', 'Conditions', 'Good level, few scrapes – or sea state, swell, wind against tide')}
       ${ta('notes', 'Notes', 'How it went, lines, swims, lessons…')}
       ${ta('putInNotes', 'Put-in notes for this trip', '')}
-      ${ta('takeOutNotes', 'Take-out notes for this trip', '')}`;
+      ${ta('takeOutNotes', 'Take-out notes for this trip', '')}
+      <label>Country</label><input id="f_country" list="dl_countries" value="${esc(v.country || '')}" placeholder="Filled in automatically if left blank" autocomplete="off">`;
   return topbar(editing ? 'Edit paddle' : 'Log a paddle', editing ? 'trip/' + id : (cand ? 'cand/' + cand.id : 'home')) + `<div class="wrap form" id="paddleForm">
     ${!editing && draft ? '<div class="banner"><div class="grow">Carrying on from an unsaved draft.</div><button class="btn small ghost" onclick="clearDraft()">Start fresh</button></div>' : ''}
     ${cand ? `<div class="banner green"><div class="grow">From ${esc(cand.cal || cand.folder || 'your photos')}. Check the date and river.</div></div>` : ''}
@@ -502,6 +511,7 @@ function screenForm(id, candId) {
     <datalist id="dl_tideplaces">${tidePlaces.map(r => `<option value="${esc(r)}">`).join('')}</datalist>
     <datalist id="dl_gauges">${gauges.map(r => `<option value="${esc(r)}">`).join('')}</datalist>
     <datalist id="dl_sections"></datalist>
+    <datalist id="dl_countries">${Array.from(new Set(ents.map(x => String(x.country || '').trim()).filter(Boolean))).sort().map(c => `<option value="${esc(c)}">`).join('')}</datalist>
     <datalist id="dl_buddies">${buddyCounts(ents).slice(0, 30).map(([n]) => n).sort((a, b) => a.localeCompare(b)).map(n => `<option value="${esc(n)}">`).join('')}</datalist>
   </div>`;
 }
@@ -633,7 +643,7 @@ function collectForm() {
     model: val('model'), alsoOn: $$('#alsoBox input').map(i => i.value.trim()).filter(Boolean).join(' / '),
     start: val('start'), finish: val('finish'), weather: val('weather'), tide: joinTide(val('hw'), val('tidePlace')), gauge: val('gauge'),
     level: val('level'), flow: val('flow'), levelComments: val('levelComments'), notes: val('notes'),
-    putInNotes: val('putInNotes'), takeOutNotes: val('takeOutNotes'), newPlaces: []
+    putInNotes: val('putInNotes'), takeOutNotes: val('takeOutNotes'), country: val('country'), newPlaces: []
   };
   const newPlace = w => {
     const name = $('#np_' + w + '_name').value.trim();
