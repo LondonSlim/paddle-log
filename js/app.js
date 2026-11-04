@@ -22,14 +22,17 @@ function render() {
     trips: [screenTrips], trip: [screenTrip], buddies: [screenBuddies], buddy: [screenBuddy],
     add: [() => screenForm(null), afterForm], edit: [screenForm, afterForm], finish: [screenFinish],
     place: [screenPlace, afterPlace], setup: [screenSetup], map: [screenMap, afterMap],
-    review: [screenReview], cand: [screenCand], addc: [a => screenForm(null, a), afterForm]
+    review: [screenReview], cand: [screenCand], addc: [a => screenForm(null, a), afterForm],
+    countries: [screenCountries], levels: [screenLevels, afterLevels], tides: [screenTides, afterTides]
   };
   if (VIEW && VIEW.hash !== location.hash) closeViewer();
   if (S.statusRoute !== location.hash) { S.status = ''; S.statusRoute = location.hash; }
   const [scr, after] = screens[route] || screens.home;
+  const charting = route === 'levels' || route === 'tides';
+  if (charting !== document.body.classList.contains('charting')) { document.body.classList.toggle('charting', charting); freeTurn(charting); }
   app.innerHTML = scr(route === 'add' ? undefined : arg);
   if (after) after(arg);
-  const tab = { home: 'home', trips: 'home', buddies: 'home', buddy: 'home', rivers: 'rivers', river: 'rivers', place: 'rivers', add: 'add', edit: 'finish', finish: 'finish', trip: 'home', map: 'map', review: 'finish', cand: 'finish', addc: 'finish' }[route] || 'home';
+  const tab = { countries: 'home', levels: 'rivers', tides: 'rivers', home: 'home', trips: 'home', buddies: 'home', buddy: 'home', rivers: 'rivers', river: 'rivers', place: 'rivers', add: 'add', edit: 'finish', finish: 'finish', trip: 'home', map: 'map', review: 'finish', cand: 'finish', addc: 'finish' }[route] || 'home';
   document.body.classList.toggle('homepage', route === 'home' || !screens[route]);
   $$('#nav a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));
   updateDot();

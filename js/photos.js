@@ -5,10 +5,19 @@
 
 const MAX_PHOTOS = 5;
 const photoUrl = (id, w) => 'https://lh3.googleusercontent.com/d/' + id + '=w' + w;
-// Photos in the sheet, less any waiting on the phone to be deleted
+// Photos in the sheet, less any waiting on the phone to be deleted. A position moved by hand
+// (Moved Lat / Moved Lon in the Photos tab, or a move waiting to send) is used in place of the geotag.
 const livePhotos = () => {
   const gone = new Set(S.queue.filter(q => q.kind === 'delphoto').map(q => q.id));
-  return ((S.data && S.data.photos) || []).filter(p => !gone.has(p.id));
+  const moves = {}; S.queue.filter(q => q.kind === 'movephoto').forEach(q => { moves[q.id] = q; });
+  return ((S.data && S.data.photos) || []).filter(p => !gone.has(p.id)).map(p => {
+    const o = Object.assign({}, p, { tagLat: num(p.lat), tagLon: num(p.lon) });
+    let ml = num(p.movedLat), mo = num(p.movedLon);
+    if (moves[p.id]) { ml = num(moves[p.id].lat); mo = num(moves[p.id].lon); }
+    if (ml != null && mo != null) Object.assign(o, { lat: ml, lon: mo, moved: true });
+    else Object.assign(o, { lat: o.tagLat, lon: o.tagLon, moved: false });
+    return o;
+  });
 };
 const tripLabel = t => [t.river, t.section, fmtDate(parseDate(t.date))].filter(Boolean).join(' · ');
 
@@ -120,10 +129,11 @@ function openViewer(list, i) {
       <button class="vprev" onclick="stepViewer(-1)" aria-label="Previous">‹</button><button class="vnext" onclick="stepViewer(1)" aria-label="Next">›</button>
       <div class="vcap"></div>
       <button class="vbin" onclick="askDelPhoto()" aria-label="Delete photo">${ICON.bin}</button>
+      <button class="vmove" onclick="openMovePhoto()" aria-label="Move photo on the map">${ICON.pin}</button>
       <div class="vask" hidden><div><b>Delete this photo?</b><br>It goes to the bin in your Google Drive.</div>
         <div class="btnrow"><button class="btn small danger" onclick="delPhoto()">Delete</button><button class="btn small ghost" onclick="keepPhoto()">Keep</button></div></div>`;
     let x0 = null;
-    v.addEventListener('touchstart', ev => { x0 = ev.touches[0].clientX; }, { passive: true });
+    v.addEventListener('touchstart', ev => { x0 = ev.target.closest && ev.target.closest('#vmovebox') ? null : ev.touches[0].clientX; }, { passive: true });
     v.addEventListener('touchend', ev => { if (x0 == null) return; const dx = ev.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 50) stepViewer(dx < 0 ? 1 : -1); });
     document.body.appendChild(v);
   }
@@ -134,6 +144,7 @@ function drawViewer() {
   v.querySelector('img').src = p.full;
   v.querySelector('.vcap').innerHTML = `<b>${esc(tripLabel(p))}</b>${VIEW.list.length > 1 ? `<span>${VIEW.i + 1} of ${VIEW.list.length}</span>` : ''}`;
   v.querySelector('.vbin').hidden = !p.id; v.querySelector('.vask').hidden = true;
+  v.querySelector('.vmove').hidden = !p.id;
   v.querySelector('.vprev').hidden = VIEW.i === 0; v.querySelector('.vnext').hidden = VIEW.i >= VIEW.list.length - 1;
 }
 window.stepViewer = d => { if (!VIEW) return; const j = VIEW.i + d; if (j < 0 || j >= VIEW.list.length) return; VIEW.i = j; drawViewer(); };
@@ -148,7 +159,54 @@ window.delPhoto = function () {
   VIEW.i = Math.min(VIEW.i, VIEW.list.length - 1); drawViewer();
   const m = location.hash.match(/^#trip\/(.+)$/); if (m) { render(); showPhotos(decodeURIComponent(m[1])); }
 };
-window.closeViewer = () => { const v = $('#viewer'); if (v) v.remove(); VIEW = null; document.body.classList.remove('viewing'); checkTurn(); };
+window.closeViewer = () => { closeMovePhoto(); const v = $('#viewer'); if (v) v.remove(); VIEW = null; document.body.classList.remove('viewing'); checkTurn(); };
+
+/* ---------- move a photo that sits in the wrong place ---------- */
+// The geotag in the photo stays as it is; the new position is kept separately and can be undone.
+let MOVE = null;
+window.openMovePhoto = function () {
+  const p = VIEW && VIEW.list[VIEW.i]; if (!p || !p.id || typeof L === 'undefined') return;
+  const v = $('#viewer'); let box = $('#vmovebox');
+  if (!box) {
+    box = document.createElement('div'); box.id = 'vmovebox';
+    box.innerHTML = `<div class="vm-head"><b>Move this photo</b><span id="vm_info">Tap the map where the photo was taken</span></div>
+      <div id="vm_map"></div>
+      <div class="btnrow"><button class="btn small" id="vm_save" disabled onclick="saveMovePhoto()">Save position</button>
+        <button class="btn small ghost" id="vm_reset" onclick="resetMovePhoto()">Back to geotag</button>
+        <button class="btn small ghost" onclick="closeMovePhoto()">Cancel</button></div>`;
+    v.appendChild(box);
+  }
+  const live = livePhotos().find(x => x.id === p.id) || p;
+  const trip = entries().find(e => e.date === p.date && onWater(e, p.river));
+  const pl = trip && placeByName()[trip.putInPlace];
+  const start = live.lat != null ? [live.lat, live.lon] : pl && pl.latN != null ? [pl.latN, pl.lonN] : null;
+  $('#vm_reset').hidden = !live.moved;
+  $('#vm_info').textContent = live.moved ? 'Moved by hand. Tap the map to move it again.' : live.lat != null ? 'Geotag shown. Tap the map where it was really taken.' : 'No geotag. Tap the map where it was taken.';
+  const map = L.map($('#vm_map'), { zoomControl: true, attributionControl: true });
+  tileLayer().addTo(map);
+  if (start) map.setView(start, 16); else map.setView([52.6, -2.5], 6);
+  const mk = start ? L.marker(start, { icon: photoIcon() }).addTo(map) : null;
+  MOVE = { id: p.id, map, mk, lat: null, lon: null };
+  map.on('click', ev => {
+    MOVE.lat = +ev.latlng.lat.toFixed(6); MOVE.lon = +ev.latlng.lng.toFixed(6);
+    if (MOVE.mk) MOVE.mk.setLatLng(ev.latlng); else MOVE.mk = L.marker(ev.latlng, { icon: photoIcon() }).addTo(map);
+    $('#vm_save').disabled = false; $('#vm_info').textContent = 'New position: ' + MOVE.lat.toFixed(5) + ', ' + MOVE.lon.toFixed(5);
+  });
+  box.hidden = false; setTimeout(() => map.invalidateSize(), 60);
+};
+function queueMove(id, lat, lon) {
+  S.queue = S.queue.filter(q => !(q.kind === 'movephoto' && q.id === id));
+  enqueue({ kind: 'movephoto', id, lat, lon });
+  const p = VIEW && VIEW.list.find(x => x.id === id);
+  if (p) { const live = livePhotos().find(x => x.id === id); if (live) { p.lat = live.lat; p.lon = live.lon; } }
+}
+window.saveMovePhoto = function () { if (!MOVE || MOVE.lat == null) return; queueMove(MOVE.id, MOVE.lat, MOVE.lon); toast('Photo moved'); closeMovePhoto(); };
+window.resetMovePhoto = function () { if (!MOVE) return; queueMove(MOVE.id, '', ''); toast('Photo back at its geotag'); closeMovePhoto(); };
+function closeMovePhoto() {
+  if (MOVE && MOVE.map) { try { MOVE.map.remove(); } catch (e) {} }
+  MOVE = null; const box = $('#vmovebox'); if (box) box.remove();
+}
+window.closeMovePhoto = closeMovePhoto;
 
 // Photo markers: a small blue camera dot, shown on the three most zoomed-in map levels.
 // Built as an HTML marker with a generous invisible tap area so it is easy to hit on a phone.

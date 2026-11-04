@@ -36,6 +36,21 @@ function addGaugePins(map, gs) {
   });
 }
 
+// Latest reading for a gauge, when the sheet sends one (from the Status column of the Gauges tab)
+function gaugeNow(name) {
+  const info = gaugeInfo()[name] || {};
+  const txt = Object.values(info).filter(v => typeof v === 'string').join(' ');
+  const m = txt.match(/Level\s+(-?\d+(?:\.\d+)?)\s*m/i);
+  if (m) return { level: +m[1], state: 'ok' };
+  return { level: null, state: /no recent reading|offline|not read/i.test(txt) ? 'none' : 'unknown' };
+}
+
+// Every gauge with a position, for the main map
+function allGauges() {
+  return Object.entries(gaugeInfo()).map(([g, i]) => ({ name: g, lat: num(i.lat), lon: num(i.lon), river: i.river || '' }))
+    .filter(g => g.lat != null && g.lon != null);
+}
+
 /* ---------- tides ---------- */
 
 // Tide is kept in one cell as "HW 14:41 London Bridge"; the form shows the time and the place separately.

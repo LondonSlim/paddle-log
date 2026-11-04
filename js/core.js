@@ -163,7 +163,9 @@ function gaugeLink(name) {
 function checkTurn() {
   const t = screen.orientation && screen.orientation.type;
   const land = (t ? t.startsWith('landscape') : Math.abs(window.orientation || 0) === 90) && window.innerWidth > window.innerHeight;
-  document.body.classList.toggle('turned', !!land && Math.min(screen.width, screen.height) < 600 && !document.body.classList.contains('viewing'));
+  // the photo viewer and the level/tide graphs may turn sideways
+  const free = document.body.classList.contains('viewing') || document.body.classList.contains('charting');
+  document.body.classList.toggle('turned', !!land && Math.min(screen.width, screen.height) < 600 && !free);
 }
 try { screen.orientation && screen.orientation.lock && screen.orientation.lock('portrait').catch(() => {}); } catch (e) {}
 window.addEventListener('orientationchange', () => setTimeout(checkTurn, 300));
@@ -186,6 +188,12 @@ function topbar(title, back, extraHtml) {
     <h1>${esc(title)}${extraHtml || ''}</h1></div>`;
 }
 const go = h => { location.hash = h; };
+// Allow or stop turning sideways (Android honours this; on iPhone the cover above does the job)
+function freeTurn(on) {
+  try { if (on) { screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); }
+    else { screen.orientation && screen.orientation.lock && screen.orientation.lock('portrait').catch(() => {}); } } catch (e) {}
+  checkTurn();
+}
 window.go = go;
 
 function syncBanner() {

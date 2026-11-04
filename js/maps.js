@@ -79,7 +79,7 @@ function riversByPlace() {
 }
 function screenMap() {
   return topbar('Map', '') + `<div class="wrap">
-    <div class="legend" style="margin-top:12px"><span><i style="background:#6DB33F"></i>Access point</span><span><i class="ph"></i>Photo</span></div>
+    <div class="legend" style="margin-top:12px"><span><i style="background:#6DB33F"></i>Access point</span><span><i class="gauge"></i>Gauge</span><span><i class="ph"></i>Photo</span></div>
     <div class="mapfull" id="allMap"></div></div>`;
 }
 function afterMap() {
@@ -95,6 +95,42 @@ function afterMap() {
     };
   });
   const map = makeMap(el, pts, { maxZoom: 8 });
-  if (map) addPhotoDots(map, livePhotos());
+  if (!map) return;
+  addPhotoDots(map, livePhotos());
+  addAllGauges(map);
+}
+
+// Gauges on the main map, with a button to hide or show them
+const LS_GAUGES = NS + 'wl_mapgauges';
+function addAllGauges(map) {
+  const layer = L.layerGroup();
+  allGauges().forEach(g => {
+    const now = gaugeNow(g.name);
+    const m = L.marker([g.lat, g.lon], {
+      icon: L.divIcon({ className: 'wl-gauge', html: '<span class="gpin">G</span>', iconSize: [24, 20], iconAnchor: [12, 10] }),
+      title: g.name + ' gauge', zIndexOffset: 400
+    });
+    m.bindPopup(`<b>${esc(g.name)} gauge</b>${g.river ? '<br>' + esc(g.river) : ''}` +
+      (now.level != null ? `<br>Latest ${now.level.toFixed(2)} m` : now.state === 'none' ? '<br>No recent reading' : '') +
+      `<br><a href="${gaugeLink(g.name)}" target="_blank" rel="noopener">Live level</a>`);
+    layer.addLayer(m);
+  });
+  let on = store.get(LS_GAUGES, true);
+  if (on) layer.addTo(map);
+  const Ctl = L.Control.extend({
+    options: { position: 'topleft' },
+    onAdd() {
+      const b = L.DomUtil.create('button', 'mapsize gtoggle' + (on ? ' on' : ''));
+      b.type = 'button'; b.title = 'Show or hide gauges'; b.textContent = 'G';
+      L.DomEvent.disableClickPropagation(b);
+      L.DomEvent.on(b, 'click', ev => {
+        L.DomEvent.stop(ev); on = !on; store.set(LS_GAUGES, on);
+        if (on) layer.addTo(map); else map.removeLayer(layer);
+        b.classList.toggle('on', on); toast(on ? 'Gauges shown' : 'Gauges hidden');
+      });
+      return b;
+    }
+  });
+  new Ctl().addTo(map);
 }
 

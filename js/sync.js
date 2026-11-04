@@ -75,6 +75,7 @@ async function flush() {
         else if (q.kind === 'photo') await api('addphoto', { trip: q.trip, photo: q.photo, uid: q.uid });
         else if (q.kind === 'delete') await api('delete', { row: q.row, expect: q.expect, uid: q.uid });
         else if (q.kind === 'delphoto') await api('deletephoto', { id: q.id, uid: q.uid });
+        else if (q.kind === 'movephoto') await api('movephoto', { id: q.id, lat: q.lat, lon: q.lon, uid: q.uid });
         S.queue.shift(); sent++; saveQueue();
       } catch (e) {
         if (e.server && (q.kind === 'update' || q.kind === 'delete') && /moved/i.test(e.message) && !q.relocated && await relocate(q)) continue;

@@ -9,14 +9,16 @@ function screenHome() {
       <div class="ph p1" role="img" aria-label="Hugh canoeing through white water"></div>
       ${n ? `<button class="pending" onclick="flush()">${n} waiting to send · Send now</button>` : ''}
       <button class="gear" onclick="go('setup')" aria-label="Settings">${ICON.cog}</button>
-      <h1 class="title">${esc(name)}</h1>
+      <h1 class="title">${titleLines(name)}</h1>
       <button class="st s1" onclick="go('rivers')"><b>${st.rivers}</b><span>Rivers / Waters</span></button>
       <button class="st s2" onclick="go('trips')"><b>${st.trips}</b><span>Trips</span></button>
       <button class="st s3" onclick="go('buddies')"><b>${st.buddies}</b><span>Buddies</span></button>
-      <button class="st s4" onclick="go('rivers')"><b>${st.countries}</b><span>Countries</span></button>
+      <button class="st s4" onclick="go('countries')"><b>${st.countries}</b><span>Countries</span></button>
       <div class="ph p2" role="img" aria-label="Hugh in his red canoe"></div>
     </div></section>`;
 }
+// "Water Log" is set as two lines, Water above Log
+const titleLines = n => esc(n).replace(/\s+/, '<br>');
 function fitHome() {
   const b = $('#board'), h = $('#home'); if (!b || !h) return;
   const k = h.clientWidth / 393;
@@ -36,6 +38,7 @@ function screenTrips(year) {
   }
   return topbar('Trips', 'home') + `<div class="wrap">
     <input class="search" id="tq" placeholder="Search river, place, paddler…" oninput="filterTrips()">
+    <div class="btnrow"><a class="btn small ghost" href="#countries">Countries</a></div>
     <div id="tripList">${yearCards(list)}</div></div>`;
 }
 function yearCards(list) {
@@ -62,6 +65,24 @@ window.filterTrips = function () {
   $('#tripList').innerHTML = `<ul class="list">${tripRows(list)}</ul>`;
 };
 
+// Countries: one card per country (like the years); tap one for its trips, newest first
+function screenCountries(country) {
+  const list = entries();
+  if (country) {
+    const cl = list.filter(e => String(e.country || '').trim() === country);
+    return topbar(country + ' · ' + cl.length + (cl.length === 1 ? ' trip' : ' trips'), 'countries') + `<div class="wrap">
+      <ul class="list">${tripRows(cl)}</ul></div>`;
+  }
+  const cs = {};
+  list.forEach(e => { const c = String(e.country || '').trim(); if (c) (cs[c] = cs[c] || []).push(e); });
+  const keys = Object.keys(cs).sort((a, b) => cs[b].length - cs[a].length || a.localeCompare(b));
+  return topbar('Countries', 'home') + `<div class="wrap">
+    ${keys.length ? `<div class="years">${keys.map(c => {
+      const n = cs[c].length, rv = new Set([].concat(...cs[c].map(watersOf))).size;
+      return `<a class="ycard country" href="#countries/${enc(c)}"><b>${esc(c)}</b><span>${n} ${n === 1 ? 'trip' : 'trips'}</span><small>${rv} ${rv === 1 ? 'water' : 'waters'}</small></a>`;
+    }).join('')}</div>` : '<div class="empty">No countries recorded yet</div>'}</div>`;
+}
+
 function screenBuddies() {
   const sort = store.get(LS.budsort, 'most');
   return topbar('Paddling buddies', 'home') + `<div class="wrap">
@@ -86,7 +107,7 @@ function screenBuddy(name) {
 function screenRivers() {
   const sort = store.get(LS.sort, 'recent');
   return topbar('Rivers / Waters', '') + `<div class="wrap">
-    <input class="search" id="rq" placeholder="Search rivers, lakes and coasts" oninput="filterRivers()">
+    <input class="search" id="rq" placeholder="Search rivers, lakes, waterways and coasts" oninput="filterRivers()">
     <div class="seg">${[['recent', 'Recent'], ['most', 'Most paddled'], ['az', 'A–Z']].map(([k, l]) =>
       `<button class="${sort === k ? 'on' : ''}" onclick="setRiverSort('${k}')">${l}</button>`).join('')}</div>
     <ul class="list" id="riverList"></ul></div>`;
@@ -113,15 +134,16 @@ function screenRiver(name) {
   const yrs = r.first ? (r.first.getFullYear() === r.last.getFullYear() ? r.first.getFullYear() : r.first.getFullYear() + '–' + r.last.getFullYear()) : '';
   return topbar(name, 'rivers') + `<div class="wrap">
     <div class="meta"><button class="badge linkish" onclick="document.getElementById('tripsLevels').scrollIntoView({behavior:'smooth'})">${list.length} ${list.length === 1 ? 'trip' : 'trips'}</button>${yrs ? `<span class="badge grey">${yrs}</span>` : ''}</div>
+    ${sectionsCard(name, list)}
     <div class="mapbox small" id="riverMap"></div>
     <div class="legend"><span><i style="background:#6DB33F"></i>Access point</span>${gs.some(g => g.lat != null) ? '<span><i class="gauge"></i>Gauge</span>' : ''}<span><i class="ph"></i>Photo</span></div>
     <h2>Access points</h2>
     ${ps.length ? `<div class="updown">Top of the river first. Tap a place for details.</div>
       <div class="places">${ps.map(placeRow).join('')}</div>` : '<div class="empty">No access points saved yet</div>'}
-    ${gs.length ? `<h2>Gauges</h2><div class="card">${gs.map(g =>
+    ${gs.length ? `<details class="gdet"><summary><h2>Gauges <span class="muted">(${gs.length})</span></h2>${ICON.chev}</summary><div class="card">${gs.map(g =>
       `<div class="row" style="box-shadow:none;margin:0;padding:8px 0;cursor:default"><span class="gnum">G${g.n}</span><div class="grow"><div class="t">${esc(g.name)}</div>
         ${(S.data.gauges || {})[g.name] ? '' : '<div class="s">Link searches the web</div>'}</div>
-        <a class="btn small orange" href="${gaugeLink(g.name)}" target="_blank" rel="noopener">${ICON.wave} Live level</a></div>`).join('')}</div>` : ''}
+        <a class="btn small orange" href="${gaugeLink(g.name)}" target="_blank" rel="noopener">${ICON.wave} Live level</a></div>`).join('')}</div></details>` : ''}
     <h2 id="tripsLevels">Trips and levels</h2>
     <ul class="list">${list.map(e => {
       const lv = levelText(e);
@@ -176,10 +198,12 @@ function screenTrip(id) {
   const editable = e.row || e.pendingUid;
   const waters = watersOf(e);
   const craft = [e.craft, e.model].filter(Boolean).join(' – ');
-  return topbar(fmtDate(e._d), 'home', ` <span class="tb-river">${esc(waters.join(' + '))}</span>`) + `<div class="wrap">
+  const wname = waters.join(' + ') || 'Trip';
+  const size = wname.length > 26 ? ' long' : wname.length > 16 ? ' mid' : '';
+  return `<div class="topbar tripbar"><button class="iconbtn" onclick="history.length>1?history.back():go('home')" aria-label="Back">${ICON.back}</button>
+    <div class="tt"><h1 class="tt-river${size}">${waters.length ? waters.map(w => `<a href="#river/${enc(w)}">${esc(w)}</a>`).join(' + ') : 'Trip'}</h1>${e.section ? `<div class="tt-sec">${esc(e.section)}</div>` : ''}<div class="tt-date">${esc(fmtDate(e._d))}</div></div></div>` + `<div class="wrap">
     ${e.pendingUid ? '<div class="banner">Saved on this phone, waiting to send.</div>' : ''}
-    <div class="card"><h3>${waters.map(w => `<a href="#river/${enc(w)}">${esc(w)}</a>`).join(' + ')}${e.section ? ' · ' + esc(e.section) : ''}</h3>
-      <div class="meta">${craft ? `<span class="badge grey">${esc(craft)}</span>` : ''}${e.start || e.finish ? `<span class="badge grey">${esc(e.start || '?')}–${esc(e.finish || '?')}</span>` : ''}${lv ? `<span class="badge">${esc(lv)}</span>` : ''}${e.country ? `<span class="badge grey">${esc(e.country)}</span>` : ''}</div>
+    <div class="card"><div class="meta" style="margin-top:0">${craft ? `<span class="badge grey">${esc(craft)}</span>` : ''}${e.start || e.finish ? `<span class="badge grey">${esc(e.start || '?')}–${esc(e.finish || '?')}</span>` : ''}${lv ? `<span class="badge">${esc(lv)}</span>` : ''}${e.country ? `<span class="badge grey">${esc(e.country)}</span>` : ''}</div>
       <dl class="kv" style="margin-top:12px">
         ${placeLine('Put in', e.putInPlace)}
         ${placeLine('Take out', e.takeOutPlace)}
@@ -388,7 +412,7 @@ window.craftChanged = function () {
 };
 
 // More than one water on a trip, e.g. down the Tryweryn and on to the Dee
-const alsoRow = (w, i) => `<div class="also"><input class="f_also" list="dl_rivers" value="${esc(w || '')}" placeholder="Another river, lake or coast" autocomplete="off">
+const alsoRow = (w, i) => `<div class="also"><input class="f_also" list="dl_rivers" value="${esc(w || '')}" placeholder="Another river, lake, waterway or coast" autocomplete="off">
   <button type="button" class="btn small ghost" onclick="this.parentNode.remove();saveDraft()" aria-label="Remove">✕</button></div>`;
 window.addAlso = function () {
   const box = $('#alsoBox'); box.insertAdjacentHTML('beforeend', alsoRow('', box.children.length));
@@ -442,7 +466,7 @@ function screenForm(id, candId) {
     ${dateSelects(v.date)}
     <label>Craft</label><select id="f_craft" onchange="craftChanged()">${crafts.map(k => `<option${k === v.craft ? ' selected' : ''}>${esc(k)}</option>`).join('')}</select>
     <label>Model</label><input id="f_model" list="dl_models" value="${esc(v.model || '')}" placeholder="e.g. Prospector 16" autocomplete="off">
-    <label>River, lake or coast</label><input id="f_river" list="dl_rivers" value="${esc(v.river || '')}" onchange="riverChanged()" autocomplete="off" placeholder="e.g. Dart, or Dorset coast">
+    <label>River, lake, waterway, coast or other</label><input id="f_river" list="dl_rivers" value="${esc(v.river || '')}" onchange="riverChanged()" autocomplete="off" placeholder="e.g. Dart, Regent's Canal or Dorset coast">
     <div id="alsoBox">${FORM.also.map((w, i) => alsoRow(w, i)).join('')}</div>
     <button type="button" class="linkbtn" onclick="addAlso()">＋ Another water on this trip</button>
     <label>Section</label><input id="f_section" list="dl_sections" value="${esc(v.section || '')}" autocomplete="off">
