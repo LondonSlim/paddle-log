@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Suggested Access</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--or:#f6b37a;--orD:#d9772e;--gr:#5cb85c;--grD:#2f8a3a;--ink:#20302a;--mute:#66736d;--bg:#fbf7f1;--panel:#fff;--line:#e4ddd2;--put:#2f8a3a;--take:#d9542e;--both:#7b4bb5;--bad:#b3261e}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:16px/1.4 -apple-system,system-ui,sans-serif;color:var(--ink);background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;gap:8px;align-items:center;padding:calc(env(safe-area-inset-top) + 6px) 10px 6px;background:linear-gradient(90deg,var(--or),#f9cf9f);}
+header h1{font-size:18px;margin:0;flex:1}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 12px;min-height:40px}
+a button{color:var(--ink)}
+button.go{background:var(--grD);border-color:var(--grD);color:#fff}
+button.warn{color:var(--bad)}
+#map{flex:1;position:relative}
+#msg{position:absolute;z-index:1000;left:50%;transform:translateX(-50%);top:8px;background:rgba(32,48,42,.88);color:#fff;padding:6px 12px;border-radius:8px;font-size:14px;max-width:90%;text-align:center;pointer-events:none;opacity:0;transition:opacity .3s}
+#msg.on{opacity:1}#msg.err{background:var(--bad)}
+#sheet{background:var(--panel);border-top:1px solid var(--line);padding:10px 12px calc(env(safe-area-inset-bottom) + 10px);max-height:46vh;overflow:auto}
+#sheet[hidden]{display:none}
+#sheet h2{margin:0 0 2px;font-size:17px}
+.sub{color:var(--mute);font-size:14px}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.coords{font-variant-numeric:tabular-nums}
+#list{position:absolute;inset:0;z-index:1500;background:var(--bg);overflow:auto;padding:8px 10px calc(env(safe-area-inset-bottom) + 10px)}
+#list[hidden]{display:none}
+#list .tools{display:flex;gap:8px;position:sticky;top:0;background:var(--bg);padding:4px 0 8px}
+#list input,#list select{border:1px solid var(--line);border-radius:8px;padding:8px;background:#fff;min-height:40px}
+#list input{flex:1;min-width:0}
+.riv{font-weight:600;margin:12px 0 4px;color:var(--grD)}
+.row{display:flex;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px solid var(--line)}
+.dot{width:12px;height:12px;border-radius:50%;flex:none;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+.dot.mv{box-shadow:0 0 0 2px #000}
+.key{display:flex;gap:12px;font-size:13px;color:var(--mute);margin-top:8px;align-items:center;flex-wrap:wrap}
+.key span{display:inline-flex;gap:5px;align-items:center}
+.pin{width:22px;height:22px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.6)}
+#cfg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:3000}
+#cfg>div{background:#fff;border-radius:12px;padding:16px;width:100%;max-width:420px}
+#cfg label{display:block;font-size:13px;color:var(--mute);margin:10px 0 3px}
+#cfg input{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px}
+.leaflet-control-layers{font-size:15px}
+.leaflet-control-layers label{padding:5px 0}
+.lbtn{background:#fff;width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer}
+</style>
+</head>
+<body>
+<header>
+  <h1>Suggested Access</h1>
+  <button id="listBtn">List</button>
+  <button id="cfgBtn" aria-label="Settings">⚙︎</button>
+</header>
+<div id="map"><div id="msg" role="status"></div>
+  <div id="list" hidden>
+    <div class="tools"><input id="q" type="search" placeholder="Filter rivers…"><select id="cty"><option value="">All</option></select><button id="closeList">Map</button></div>
+    <div id="rows"></div>
+  </div>
+</div>
+<div id="sheet" hidden></div>
+<div id="cfg"><div>
+  <b>Connect to the Canoe Log Book</b>
+  <p class="sub">Paste the web app address for Suggested Access and your Water Log App key. Both stay on this phone only.</p>
+  <label>Web app address</label><input id="cfgUrl" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="url">
+  <label>App key</label><input id="cfgKey" type="password" autocomplete="off">
+  <div class="btns"><button class="go" id="cfgSave">Save</button><button id="cfgCancel">Cancel</button></div>
+</div></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function(){
+'use strict';
+var $=function(id){return document.getElementById(id)};
+function store(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
+var cfg={url:store('sa_url')||'',key:store('sa_key')||''};
+var pts=[],byId={},markers={},sel=null,moving=null,undo=null,mt;
+function msg(t,err,ms){var m=$('msg');m.textContent=t;m.className='on'+(err?' err':'');clearTimeout(mt);mt=setTimeout(function(){m.className=''},ms||2500)}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function kind(p){var r=String(p.Role).toLowerCase();var a=r.indexOf('put-in')>=0,b=r.indexOf('take-out')>=0;return a&&b?'both':a?'put':'take'}
+var COL={put:'#2f8a3a',take:'#d9542e',both:'#7b4bb5'};
+function moved(p){return p.Position&&p.Position!=='Not checked'}
+
+/* ---- map ---- */
+var map=L.map('map',{zoomControl:false}).setView([55.4,-5.8],6);
+L.control.zoom({position:'bottomright'}).addTo(map);
+var topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{subdomains:'abc',maxNativeZoom:17,maxZoom:19,
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, SRTM | &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)'}).addTo(map);
+var sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,
+  attribution:'Imagery &copy; Esri, Maxar, Earthstar Geographics'});
+L.control.layers({'OpenTopoMap':topo,'Satellite':sat},null,{position:'topright',collapsed:true}).addTo(map);
+var Loc=L.Control.extend({options:{position:'bottomright'},onAdd:function(){var d=L.DomUtil.create('div','leaflet-bar lbtn');d.title='My position';d.textContent='◎';
+  L.DomEvent.on(d,'click',function(ev){L.DomEvent.stop(ev);map.locate({setView:true,maxZoom:16,enableHighAccuracy:true})});return d}});
+map.addControl(new Loc());
+var me=null;
+map.on('locationfound',function(e){if(me)map.removeLayer(me);me=L.circleMarker(e.latlng,{radius:8,color:'#fff',weight:3,fillColor:'#1e6fd9',fillOpacity:1}).addTo(map);
+  if(moving){var m=markers[moving];m.setLatLng(e.latlng);showPos()}});
+map.on('locationerror',function(){msg('Could not get your position',true)});
+var layer=L.layerGroup().addTo(map);
+function icon(p,big){var s=big?30:22;return L.divIcon({className:'',iconSize:[s,s],iconAnchor:[s/2,Math.round(s*1.21)],
+  html:'<div class="pin" style="width:'+s+'px;height:'+s+'px;background:'+COL[kind(p)]+';'+(moved(p)?'border-color:#000':'')+'"></div>'})}
+
+/* ---- data ---- */
+function api(method,body){
+  if(!cfg.url||!cfg.key){openCfg();return Promise.reject(new Error('Not connected'))}
+  var p=method==='GET'?fetch(cfg.url+'?key='+encodeURIComponent(cfg.key),{cache:'no-store'})
+    :fetch(cfg.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(Object.assign({key:cfg.key},body))});
+  return p.then(function(r){if(!r.ok)throw new Error('Server replied '+r.status);return r.json()}).then(function(j){if(j.ok===false)throw new Error(j.error||'Server error');return j})}
+function take(list){pts=list.filter(function(p){return p.ID&&!isNaN(parseFloat(p.Lat))});byId={};
+  pts.forEach(function(p){p.Lat=parseFloat(p.Lat);p.Long=parseFloat(p.Long);byId[p.ID]=p});draw();countries()}
+function load(first){
+  var c=store('sa_cache');if(first&&c){try{take(JSON.parse(c))}catch(e){}}
+  api('GET').then(function(j){store('sa_cache',JSON.stringify(j.points));take(j.points);
+    if(first&&!sel)fit();msg(pts.length+' points')}).catch(function(e){msg((pts.length?'Showing saved copy – ':'')+e.message,true,4000)})}
+function fit(){if(pts.length)map.fitBounds(pts.map(function(p){return[p.Lat,p.Long]}),{padding:[30,30]})}
+
+/* ---- draw ---- */
+function draw(){
+  layer.clearLayers();markers={};
+  pts.forEach(function(p){
+    var m=L.marker([p.Lat,p.Long],{icon:icon(p,p.ID===sel),draggable:p.ID===moving,zIndexOffset:p.ID===sel?1000:0});
+    m.bindTooltip(esc(p.Location),{direction:'top',offset:[0,-20]});
+    m.on('click',function(){if(!moving)select(p.ID)});
+    m.on('drag',showPos);
+    m.addTo(layer);markers[p.ID]=m});
+  rows()}
+function countries(){var s=$('cty'),v=s.value,c={};pts.forEach(function(p){c[p.Country]=1});
+  s.innerHTML='<option value="">All</option>'+Object.keys(c).sort().map(function(k){return'<option'+(k===v?' selected':'')+'>'+esc(k)+'</option>'}).join('')}
+function rows(){
+  var q=$('q').value.toLowerCase(),cty=$('cty').value,by={};
+  pts.forEach(function(p){if(cty&&p.Country!==cty)return;if(q&&(p.Location+' '+p['River / Water']).toLowerCase().indexOf(q)<0)return;
+    (by[p['River / Water']]=by[p['River / Water']]||[]).push(p)});
+  var h=Object.keys(by).sort().map(function(r){return'<div class="riv">'+esc(r)+' <span class="sub">'+esc(by[r][0].Country)+'</span></div>'+
+    by[r].map(function(p){return'<div class="row" data-id="'+esc(p.ID)+'"><span class="dot'+(moved(p)?' mv':'')+'" style="background:'+COL[kind(p)]+'"></span><div>'+esc(p.Role)+
+      '<div class="sub">Grade '+esc(p.Grade)+(moved(p)?' · moved':'')+'</div></div></div>'}).join('')}).join('');
+  $('rows').innerHTML=h||'<p class="sub">Nothing matches.</p>'}
+$('rows').addEventListener('click',function(e){var r=e.target.closest('.row');if(!r)return;$('list').hidden=true;select(r.dataset.id,true)});
+
+/* ---- detail sheet ---- */
+function select(id,pan){if(moving)return;sel=id;var p=byId[id];draw();
+  if(pan)map.setView([p.Lat,p.Long],Math.max(map.getZoom(),15));sheet()}
+function sheet(){
+  var p=byId[sel],s=$('sheet');if(!p){s.hidden=true;return}s.hidden=false;
+  var dir='https://www.google.com/maps/dir/?api=1&destination='+p.Lat+','+p.Long;
+  s.innerHTML='<h2>'+esc(p.Location)+'</h2><div class="sub">'+esc(p.Country)+' · Grade '+esc(p.Grade)+'</div>'+
+    '<div class="sub coords" id="pos">'+p.Lat.toFixed(5)+', '+p.Long.toFixed(5)+'</div>'+
+    (p['Access Notes']?'<p style="margin:6px 0 0">'+esc(p['Access Notes'])+'</p>':'')+
+    '<div class="sub" style="margin-top:4px">'+esc(p.Position)+(p.Moved?' '+esc(p.Moved):'')+' · '+esc(p.Source)+'</div>'+
+    (moving?'<p style="margin:8px 0 0"><b>Drag the pin</b>, or tap ◎ to put it where you are standing.</p><div class="btns"><button class="go" id="bSave">Save position</button><button id="bCancel">Cancel</button></div>'
+      :'<div class="btns"><button class="go" id="bMove">Move</button><a href="'+dir+'" target="_blank" rel="noopener"><button>Directions</button></a><button id="bCopy">Copy</button>'+
+       (undo&&undo.id===p.ID?'<button class="warn" id="bUndo">Undo move</button>':'')+'<button id="bClose">Close</button></div>');
+  var on=function(id,f){var b=$(id);if(b)b.onclick=f};
+  on('bMove',startMove);on('bSave',saveMove);on('bCancel',cancelMove);on('bUndo',doUndo);
+  on('bClose',function(){sel=null;$('sheet').hidden=true;draw()});
+  on('bCopy',function(){var t=p.Lat.toFixed(6)+', '+p.Long.toFixed(6);(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){msg('Copied '+t)},function(){msg(t,false,5000)})})}
+function showPos(){var m=markers[moving||sel],e=$('pos');if(m&&e){var ll=m.getLatLng();e.textContent=ll.lat.toFixed(5)+', '+ll.lng.toFixed(5)+(moving?'  (not saved)':'')}}
+function startMove(){moving=sel;var p=byId[sel];if(map.getZoom()<15)map.setView([p.Lat,p.Long],16);draw();sheet();msg('Drag the pin to the right spot',false,3000)}
+function cancelMove(){moving=null;draw();sheet()}
+function saveMove(){
+  var p=byId[moving],ll=markers[moving].getLatLng(),old={id:p.ID,lat:p.Lat,lon:p.Long,pos:p.Position,moved:p.Moved};
+  msg('Saving…',false,10000);
+  api('POST',{action:'move',id:p.ID,lat:ll.lat,lon:ll.lng}).then(function(){
+    p.Lat=+ll.lat.toFixed(6);p.Long=+ll.lng.toFixed(6);p.Position='Moved in Suggested Access';p.Moved=new Date().toISOString().slice(0,10);p['OS Grid Ref']='';
+    undo=old;moving=null;store('sa_cache',JSON.stringify(pts));draw();sheet();msg('Saved')
+  }).catch(function(e){msg('Not saved: '+e.message,true,5000)})}
+function doUndo(){var u=undo,p=byId[u.id];msg('Putting it back…',false,10000);
+  api('POST',{action:'move',id:u.id,lat:u.lat,lon:u.lon,position:u.pos}).then(function(){
+    p.Lat=u.lat;p.Long=u.lon;p.Position=u.pos;p.Moved=u.pos==='Not checked'?'':p.Moved;undo=null;store('sa_cache',JSON.stringify(pts));draw();sheet();map.panTo([p.Lat,p.Long]);msg('Moved back')
+  }).catch(function(e){msg('Not undone: '+e.message,true,5000)})}
+
+/* ---- toolbar & settings ---- */
+$('listBtn').onclick=function(){if(moving){msg('Save or cancel the move first',true);return}$('list').hidden=!$('list').hidden};
+$('closeList').onclick=function(){$('list').hidden=true};
+$('q').oninput=rows;$('cty').onchange=rows;
+function openCfg(){$('cfgUrl').value=cfg.url;$('cfgKey').value=cfg.key;$('cfg').style.display='flex'}
+$('cfgBtn').onclick=openCfg;
+$('cfgCancel').onclick=function(){$('cfg').style.display='none'};
+$('cfgSave').onclick=function(){var u=$('cfgUrl').value.trim(),m=/macros\/s\/([\w-]+)/.exec(u);
+  if(!m){msg('That doesn\'t look like a web app address ending /exec',true,4000);return}
+  cfg.url='https://script.google.com/macros/s/'+m[1]+'/exec';cfg.key=$('cfgKey').value.trim();
+  store('sa_url',cfg.url);store('sa_key',cfg.key);$('cfg').style.display='none';load(true)};
+if(cfg.url&&cfg.key)load(true);else openCfg();
+})();
+</script>
+</body>
+</html>
