@@ -6,37 +6,54 @@
 <meta name="robots" content="noindex">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#FFF8F1">
-<title>Suggested Access</title>
+<title>Access Points</title>
 <link rel="icon" href="../icons/icon-192.png">
 <link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
 <link rel="stylesheet" href="../vendor/leaflet.css">
 <link rel="stylesheet" href="../app.css">
 <style>
-/* page font paths are relative to app.css, so re-declare them from here */
 @font-face { font-family: 'Bricolage'; src: url(../vendor/fonts/bricolage-grotesque-latin-600-normal.woff2) format('woff2'); font-weight: 600; font-display: swap; }
 @font-face { font-family: 'Bricolage'; src: url(../vendor/fonts/bricolage-grotesque-latin-800-normal.woff2) format('woff2'); font-weight: 800; font-display: swap; }
 @font-face { font-family: 'Inter'; src: url(../vendor/fonts/inter-latin-400-normal.woff2) format('woff2'); font-weight: 400; font-display: swap; }
 @font-face { font-family: 'Inter'; src: url(../vendor/fonts/inter-latin-600-normal.woff2) format('woff2'); font-weight: 600; font-display: swap; }
-.nav { grid-template-columns: repeat(4, 1fr); }
-.mapfull { height: calc(100vh - var(--nav-h) - var(--safe-b) - 120px); }
-.sa-pin span { display: block; width: 26px; height: 26px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
-  background: var(--green); border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
-.sa-pin.new span { background: #1E6FD9; }
+#rivMap { scroll-margin-top: 72px; }
+body { padding-bottom: calc(24px + var(--safe-b)); }
+.num-pin { width: 28px; height: 28px; border-radius: 50%; background: var(--green); color: #fff; border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; font: 600 13px Inter, sans-serif; }
+.num-pin.sel { background: var(--orange-deep, #C96A2B); transform: scale(1.2); }
+.num-pin.new { background: #1E6FD9; }
 .laybtn { background: #fff; border: 0; border-radius: 10px; padding: 8px 12px; font: 600 13px Inter, sans-serif; box-shadow: 0 2px 8px rgba(0,0,0,.25); cursor: pointer; }
-.subtle { font-size: 13px; color: var(--ink-soft); }
-.btn.green { background: var(--green); color: #fff; }
-.searchbox { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; background: var(--card); margin: 10px 0 2px; }
+.searchbox { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; background: var(--card); margin: 10px 0 2px; font: inherit; }
+.ctry { margin: 18px 0 6px; }
+.pt { display: flex; align-items: center; gap: 10px; background: var(--card); border-radius: 14px; padding: 10px 10px 10px 12px; margin: 6px 0; box-shadow: var(--shadow, 0 1px 3px rgba(0,0,0,.08)); }
+.pt.sel { outline: 2px solid var(--orange, #F2A15F); }
+.pt .seq { flex: none; }
+.pt .nm { flex: 1; font-weight: 600; cursor: pointer; }
+.pt .arrows { display: flex; gap: 4px; }
+.pt .arrows button { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: #fff; font-size: 16px; }
+.pt .arrows button:disabled { opacity: .3; }
+.editor { background: var(--card); border-radius: 16px; padding: 14px; margin: 12px 0; box-shadow: var(--shadow, 0 1px 3px rgba(0,0,0,.08)); }
+.editor label { display: block; font-size: 13px; color: var(--ink-soft); margin: 10px 0 4px; }
+.editor input, .editor textarea, .editor select { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px; font: inherit; background: #fff; }
+.editor textarea { min-height: 70px; }
+.editor .pos { font-size: 13px; color: var(--ink-soft); margin-top: 8px; }
+.editor .pos b { color: #1E6FD9; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.btns .grow { flex: 1; }
+.savebtn { background: var(--green); color: #fff; }
+.delbtn { color: #B3261E; }
+.hint { font-size: 13px; color: var(--ink-soft); margin: 6px 0 0; }
 </style>
 </head>
 <body>
 <div id="app"></div>
-<nav class="nav" id="nav"></nav>
 <div class="toast" id="toast"></div>
 <script src="../vendor/leaflet.js"></script>
 <script src="../osgrid.js"></script>
 <script>
 'use strict';
-/* ================= basics ================= */
+/* ============ basics ============ */
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const enc = encodeURIComponent;
@@ -46,286 +63,266 @@ function toast(t, ms) { const el = $('#toast'); el.textContent = t; el.classList
 const ICON = {
   back: '<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>',
   chev: '<svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
-  nav: '<svg viewBox="0 0 24 24"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>',
-  edit: '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
-  gps: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>',
-  share: '<svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>',
-  map: '<svg viewBox="0 0 24 24"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg>',
-  wave: '<svg viewBox="0 0 24 24"><path d="M2 12c3-3 5 3 8 0s5-3 8 0 4 1 4 1"/><path d="M2 17c3-3 5 3 8 0s5-3 8 0 4 1 4 1"/></svg>',
-  plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
   cog: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>',
-  refresh: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>'
+  refresh: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>',
+  plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  gps: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>'
 };
+const COUNTRIES = ['Scotland', 'England', 'Wales', 'Northern Ireland', 'Ireland', 'Channel Islands', 'France', 'Other'];
 
-/* ================= data & sync ================= */
+/* ============ data & sync ============ */
 const cfg = { url: store('sa_url') || '', key: store('sa_key') || '' };
-let PTS = [];
-try { PTS = JSON.parse(store('sa_pts') || '[]'); } catch (e) { PTS = []; }
-let OUT = [];
-try { OUT = JSON.parse(store('sa_out') || '[]'); } catch (e) { OUT = []; }
+let PTS = [], OUT = [];
+try { PTS = JSON.parse(store('sa_pts') || '[]'); } catch (e) {}
+try { OUT = JSON.parse(store('sa_out') || '[]'); } catch (e) {}
 const saveLocal = () => { store('sa_pts', JSON.stringify(PTS)); store('sa_out', JSON.stringify(OUT)); };
 const num = v => { const n = parseFloat(v); return isFinite(n) ? n : null; };
 const byId = id => PTS.find(p => String(p.id) === String(id));
-const rivers = () => Array.from(new Set(PTS.map(p => p.river).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+const onRiver = r => PTS.filter(p => p.river === r).sort((a, b) => (num(a.order) || 999) - (num(b.order) || 999) || a.name.localeCompare(b.name));
 
 function api(method, body) {
-  if (!cfg.url || !cfg.key) return Promise.reject(new Error('Not connected – tap Settings'));
+  if (!cfg.url || !cfg.key) return Promise.reject(new Error('Not connected – open Settings'));
   const p = method === 'GET'
     ? fetch(cfg.url + '?key=' + enc(cfg.key), { cache: 'no-store' })
     : fetch(cfg.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ key: cfg.key }, body)) });
   return p.then(r => { if (!r.ok) throw new Error('Server replied ' + r.status); return r.json(); })
     .then(j => { if (j.ok === false) throw new Error(j.error || 'Server error'); return j; });
 }
-// changes go into an outbox first, so access points can be added with no signal and sent later
+// every change goes into an outbox, so it is safe with no signal and is sent when there is one
 function enqueue(op) { OUT.push(op); saveLocal(); flush(); }
 let flushing = false;
 async function flush() {
   if (flushing || !OUT.length || !cfg.url) return;
   flushing = true;
-  try {
-    while (OUT.length) { await api('POST', OUT[0]); OUT.shift(); saveLocal(); }
-    toast('All changes sent');
-  } catch (e) { if (navigator.onLine !== false) toast('Not sent yet – will retry (' + e.message + ')', 3500); }
-  flushing = false; render();
+  try { while (OUT.length) { await api('POST', OUT[0]); OUT.shift(); saveLocal(); } toast('Saved to the log book'); }
+  catch (e) { toast('Not sent yet – will retry (' + e.message + ')', 3500); }
+  flushing = false; banner();
 }
 function load() {
   if (OUT.length) return flush().then(() => { if (!OUT.length) load(); });
   return api('GET').then(j => {
-    PTS = j.points.map(p => Object.assign(p, { id: String(p.id), lat: num(p.lat), lon: num(p.lon) }));
-    saveLocal(); render();
+    PTS = j.points.map(p => Object.assign(p, { id: String(p.id), name: String(p.name || ''), river: String(p.river || ''), lat: num(p.lat), lon: num(p.lon) }));
+    saveLocal(); if (!ED) render();
   }).catch(e => toast((PTS.length ? 'Showing saved copy – ' : '') + e.message, 3500));
 }
 window.addEventListener('online', flush);
+function banner() { const b = $('#banner'); if (b) b.innerHTML = OUT.length ? `<div class="banner"><span class="grow">${OUT.length} change${OUT.length > 1 ? 's' : ''} waiting to send</span><button class="btn small orange" onclick="flush()">Send now</button></div>` : ''; }
 
-/* ================= maps ================= */
+/* ============ map ============ */
 const TOPO = () => L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { subdomains: 'abc', maxNativeZoom: 17, maxZoom: 19,
-  attribution: 'Map: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA), &copy; OpenStreetMap contributors' });
-const SAT = () => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19,
-  attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' });
-const pin = cls => L.divIcon({ className: 'sa-pin' + (cls ? ' ' + cls : ''), html: '<span></span>', iconSize: [26, 26], iconAnchor: [13, 31], popupAnchor: [0, -28] });
-let MAP = null;
+  attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA), &copy; OpenStreetMap contributors' });
+const SAT = () => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar' });
+const numIcon = (n, cls) => L.divIcon({ className: '', html: `<div class="num-pin ${cls || ''}">${n}</div>`, iconSize: [28, 28], iconAnchor: [14, 14] });
+let MAP = null, LAYER = null, NEWPIN = null;
 function makeMap(el) {
   if (MAP) { MAP.remove(); MAP = null; }
-  const map = L.map(el, { zoomControl: true });
-  let sat = store('sa_layer') === 'sat';
-  let layer = (sat ? SAT() : TOPO()).addTo(map);
+  const map = L.map(el);
+  let sat = store('sa_layer') === 'sat', tiles = (sat ? SAT() : TOPO()).addTo(map);
   const Tog = L.Control.extend({ options: { position: 'topright' }, onAdd() {
     const b = L.DomUtil.create('button', 'laybtn'); b.textContent = sat ? 'Topo map' : 'Satellite';
     L.DomEvent.disableClickPropagation(b);
-    b.onclick = () => { sat = !sat; store('sa_layer', sat ? 'sat' : 'topo'); map.removeLayer(layer); layer = (sat ? SAT() : TOPO()).addTo(map); b.textContent = sat ? 'Topo map' : 'Satellite'; };
+    b.onclick = () => { sat = !sat; store('sa_layer', sat ? 'sat' : 'topo'); map.removeLayer(tiles); tiles = (sat ? SAT() : TOPO()).addTo(map); b.textContent = sat ? 'Topo map' : 'Satellite'; };
     return b; } });
   map.addControl(new Tog());
+  LAYER = L.layerGroup().addTo(map);
   MAP = map; return map;
 }
-const fitAll = (map, pts) => { const ll = pts.filter(p => p.lat != null).map(p => [p.lat, p.lon]); if (ll.length > 1) map.fitBounds(ll, { padding: [30, 30], maxZoom: 15 }); else if (ll.length) map.setView(ll[0], 14); else map.setView([54.5, -4], 5); };
-const dirLink = p => p.lat != null ? 'https://www.google.com/maps/dir/?api=1&destination=' + p.lat + ',' + p.lon : '';
-const w3wLink = w => 'https://what3words.com/' + String(w).replace(/^\/+/, '');
 
-/* ================= order along a river ================= */
-// top of the river first: projects each point onto the river's general direction, falling back to name order
-function flowOrder(ps) {
-  const g = ps.filter(p => p.lat != null);
-  if (g.length < 2) return ps.slice().sort((a, b) => a.name.localeCompare(b.name));
-  // the imported points were numbered from the top of the river down (S001, S002…), so their IDs give
-  // the river's direction; everything, including points added later, is then placed along that line
-  const sId = g.filter(p => /^S\d+$/.test(p.id)).sort((a, b) => a.id.localeCompare(b.id));
-  const A = sId.length > 1 ? sId[0] : g[0], B = sId.length > 1 ? sId[sId.length - 1] : g[g.length - 1];
-  const c = Math.cos(A.lat * Math.PI / 180), dx = (B.lon - A.lon) * c, dy = B.lat - A.lat;
-  const sc = p => p.lat == null ? 1e12 : p.lon * c * dx + p.lat * dy;
-  return ps.slice().sort((a, b) => sc(a) - sc(b) || a.name.localeCompare(b.name));
+/* ============ screens ============ */
+function topbar(title, back, right) {
+  return `<div class="topbar">${back ? `<a class="iconbtn" href="${back}">${ICON.back}</a>` : ''}<h1>${esc(title)}</h1>${right || ''}</div>`;
 }
 
-/* ================= screens ================= */
-function topbar(title, back) {
-  return `<div class="topbar">${back ? `<a class="iconbtn" href="${back}">${ICON.back}</a>` : ''}<h1>${esc(title)}</h1>
-    <button class="iconbtn" onclick="load()" aria-label="Refresh">${ICON.refresh}</button></div>`;
-}
-function pendingBanner() {
-  return OUT.length ? `<div class="banner"><span class="grow">${OUT.length} change${OUT.length > 1 ? 's' : ''} waiting to send</span><button class="btn small orange" onclick="flush()">Send now</button></div>` : '';
-}
-function codes(p) {
-  return `<div class="codes">${p.grid ? `<span>${esc(p.grid)}</span>` : ''}${p.w3w ? `<span><a href="${w3wLink(p.w3w)}" target="_blank" rel="noopener">${esc(p.w3w)}</a></span>` : ''}${p.gauge ? `<span>Gauge: ${esc(p.gauge)}</span>` : ''}${p.lat != null ? `<span>${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}</span>` : ''}</div>`;
-}
-function posBadge(p) { return p.position && p.position !== 'Set in app' ? `<span class="badge ${p.position === 'Not checked' ? 'warn' : ''}">${esc(p.position)}</span>` : ''; }
-function placeButtons(p) {
-  const d = dirLink(p);
-  return `<div class="btnrow">${d ? `<a class="btn small" href="${d}" target="_blank" rel="noopener">${ICON.nav} Directions</a>` : ''}
-    <button class="btn small share" onclick="sharePlace('${esc(p.id)}')">${ICON.share} Share</button>
-    <a class="btn small ghost" href="#place/${enc(p.id)}">${ICON.edit} Edit</a></div>`;
-}
-
-function screenMap() {
-  return topbar('Suggested Access') + `<div class="wrap">${pendingBanner()}<div class="mapfull" id="bigMap"></div>
-    <div class="subtle">${PTS.length} access points · tap a pin for details</div></div>`;
-}
-function afterMap() {
-  const map = makeMap($('#bigMap'));
-  PTS.filter(p => p.lat != null).forEach(p => L.marker([p.lat, p.lon], { icon: pin() }).addTo(map)
-    .bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.river)}<br><a href="#place/${enc(p.id)}">Open</a> · <a href="${dirLink(p)}" target="_blank" rel="noopener">Directions</a>`));
-  const v = store('sa_view'); let done = false;
-  if (v) { try { const o = JSON.parse(v); map.setView(o.c, o.z); done = true; } catch (e) {} }
-  if (!done) fitAll(map, PTS);
-  map.on('moveend', () => store('sa_view', JSON.stringify({ c: map.getCenter(), z: map.getZoom() })));
-}
-
+// ---- home: rivers grouped by country, names only
 function screenRivers() {
   const q = (store('sa_q') || '').toLowerCase();
-  const rs = rivers().filter(r => !q || r.toLowerCase().includes(q));
-  return topbar('Rivers') + `<div class="wrap">${pendingBanner()}
-    <input class="searchbox" id="q" placeholder="Search rivers" value="${esc(store('sa_q') || '')}" oninput="store('sa_q',this.value);_render();const q=$('#q');q.focus();q.setSelectionRange(q.value.length,q.value.length)">
-    <ul class="list">${rs.map(r => { const n = PTS.filter(p => p.river === r).length;
-      return `<li><a class="row" href="#river/${enc(r)}"><div class="grow"><div class="t">${esc(r)}</div><div class="s">${n} access point${n > 1 ? 's' : ''}</div></div>${ICON.chev}</a></li>`; }).join('') || '<div class="empty">No rivers match.</div>'}</ul></div>`;
+  const rivers = {};
+  PTS.forEach(p => { if (!q || p.river.toLowerCase().includes(q)) { const c = p.country || 'Other'; (rivers[c] = rivers[c] || new Set()).add(p.river); } });
+  const order = COUNTRIES.filter(c => rivers[c]).concat(Object.keys(rivers).filter(c => !COUNTRIES.includes(c)));
+  return topbar('Access Points', null, `<button class="iconbtn" onclick="load()" aria-label="Refresh">${ICON.refresh}</button><a class="iconbtn" href="#settings" aria-label="Settings">${ICON.cog}</a>`) +
+    `<div class="wrap"><div id="banner"></div>
+    <input class="searchbox" id="q" placeholder="Search rivers" value="${esc(store('sa_q') || '')}">
+    ${order.map(c => `<h2 class="ctry">${esc(c)}</h2><ul class="list">${[...rivers[c]].sort((a, b) => a.localeCompare(b)).map(r =>
+      `<li><a class="row" href="#river/${enc(r)}"><div class="grow"><div class="t">${esc(r)}</div></div>${ICON.chev}</a></li>`).join('')}</ul>`).join('') || '<div class="empty">No rivers match.</div>'}
+    <div class="btns"><a class="btn block orange" href="#newriver">${ICON.plus} New river</a></div></div>`;
+}
+function afterRivers() {
+  const q = $('#q');
+  q.oninput = () => { store('sa_q', q.value); const pos = q.value.length; render(); const n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); };
+  banner();
 }
 
+// ---- new river: name and country, then straight into adding its first point
+let NEWRIVER = null;
+function screenNewRiver() {
+  return topbar('New river', '#rivers') + `<div class="wrap"><div class="editor">
+    <label>River name</label><input id="nr_name" autocomplete="off">
+    <label>Country</label><select id="nr_cty">${COUNTRIES.map(c => `<option>${c}</option>`).join('')}</select>
+    <div class="btns"><button class="btn savebtn grow" onclick="startNewRiver()">Next – place the first access point</button></div></div></div>`;
+}
+window.startNewRiver = function () {
+  const n = $('#nr_name').value.trim();
+  if (!n) { toast('Type the river name'); return; }
+  if (PTS.some(p => p.river.toLowerCase() === n.toLowerCase())) { location.hash = '#river/' + enc(n); return; }
+  NEWRIVER = { name: n, country: $('#nr_cty').value };
+  location.hash = '#river/' + enc(n);
+  setTimeout(() => window.addPoint(), 50);
+};
+
+// ---- river page: map, numbered list, and the editor card
+let ED = null;   // what is being edited: {id|null, lat, lon, moved}
 function screenRiver(r) {
-  const ps = flowOrder(PTS.filter(p => p.river === r));
-  return topbar(r, '#rivers') + `<div class="wrap">${pendingBanner()}<div class="mapbox" id="rivMap"></div>
-    <h2>Access points</h2><div class="places">${ps.map((p, i) => `<details class="prow"><summary><span class="seq">${i + 1}</span><span class="nm">${esc(p.name)}</span>${ICON.chev}</summary>
-      <div class="body">${posBadge(p)}${codes(p)}${p.notes ? `<div class="notes muted">${esc(p.notes)}</div>` : ''}${placeButtons(p)}</div></details>`).join('')}</div>
-    <div class="btnrow"><a class="btn block orange" href="#new/${enc(r)}">${ICON.plus} Add an access point on the ${esc(r)}</a></div></div>`;
+  const ps = onRiver(r);
+  return topbar(r, '#rivers') + `<div class="wrap"><div id="banner"></div>
+    <div class="mapbox tall" id="rivMap"></div>
+    <div id="editor"></div>
+    <div id="ptlist">${listHTML(r)}</div>
+    <div class="btns"><button class="btn block orange" onclick="addPoint()">${ICON.plus} Add access point</button></div></div>`;
 }
+function listHTML(r) {
+  const ps = onRiver(r);
+  if (!ps.length) return '<div class="empty">No access points yet.</div>';
+  return ps.map((p, i) => `<div class="pt ${ED && ED.id === p.id ? 'sel' : ''}">
+    <span class="seq">${i + 1}</span><span class="nm" onclick="selectPoint('${esc(p.id)}')">${esc(p.name)}</span>
+    <span class="arrows"><button aria-label="Up" ${i === 0 ? 'disabled' : ''} onclick="shift('${esc(p.id)}',-1)">↑</button><button aria-label="Down" ${i === ps.length - 1 ? 'disabled' : ''} onclick="shift('${esc(p.id)}',1)">↓</button></span></div>`).join('');
+}
+let RIVER = '';
 function afterRiver(r) {
-  const ps = flowOrder(PTS.filter(p => p.river === r)), map = makeMap($('#rivMap'));
-  ps.forEach((p, i) => { if (p.lat != null) L.marker([p.lat, p.lon], { icon: pin() }).addTo(map).bindPopup(`<b>${i + 1}. ${esc(p.name)}</b><br><a href="#place/${enc(p.id)}">Open</a>`); });
-  fitAll(map, ps);
+  RIVER = r; ED = null;
+  const map = makeMap($('#rivMap'));
+  drawPins();
+  const ll = onRiver(r).filter(p => p.lat != null).map(p => [p.lat, p.lon]);
+  if (ll.length > 1) map.fitBounds(ll, { padding: [35, 35], maxZoom: 15 }); else if (ll.length) map.setView(ll[0], 14);
+  else { try { const o = JSON.parse(store('sa_view')); map.setView(o.c, o.z); } catch (e) { map.setView([54.5, -4], 6); } }
+  map.on('moveend', () => store('sa_view', JSON.stringify({ c: map.getCenter(), z: map.getZoom() })));
+  // with a point open, a tap on the map moves it there (saved only with Save)
+  map.on('click', e => { if (ED) setPos(e.latlng.lat, e.latlng.lng, 'Picked on map'); });
+  banner();
 }
+function drawPins() {
+  if (!LAYER) return;
+  LAYER.clearLayers(); NEWPIN = null;
+  onRiver(RIVER).forEach((p, i) => {
+    if (p.lat == null) return;
+    const isSel = ED && ED.id === p.id;
+    if (isSel && ED.moved) return;   // its new position is drawn in blue instead
+    L.marker([p.lat, p.lon], { icon: numIcon(i + 1, isSel ? 'sel' : ''), zIndexOffset: isSel ? 1000 : 0 })
+      .addTo(LAYER).on('click', () => selectPoint(p.id)).bindTooltip(esc(p.name), { direction: 'top', offset: [0, -14] });
+  });
+  if (ED && ED.lat != null && (ED.moved || !ED.id)) NEWPIN = L.marker([ED.lat, ED.lon], { icon: numIcon('•', 'new'), zIndexOffset: 2000 }).addTo(LAYER);
+}
+function refreshRiver() { $('#ptlist').innerHTML = listHTML(RIVER); drawPins(); }
 
-/* ---- the edit / add screen, laid out like Water Log's access point screen ---- */
-let FORM = {};
-function screenPlace(id, newRiver) {
-  const isNew = id == null;
-  const p = isNew ? { id: 'N' + Date.now().toString(36), name: '', river: newRiver || '', gauge: '', grid: '', w3w: '', notes: '', lat: null, lon: null } : byId(id);
-  if (!p) return topbar('Access point', '#rivers') + '<div class="wrap empty">Access point not found – it may have been deleted.</div>';
-  FORM = { id: p.id, isNew, lat: p.lat, lon: p.lon, moved: false, how: '' };
-  const back = p.river ? '#river/' + enc(p.river) : '#map';
-  return topbar(isNew ? 'New access point' : p.name, back) + `<div class="wrap form">
-    ${isNew ? '' : `<div class="card place"><h3>${esc(p.name)} ${posBadge(p)}</h3>${codes(p)}${p.notes ? `<div class="notes muted">${esc(p.notes)}</div>` : ''}
-      ${p.source ? `<div class="subtle">Source: ${esc(p.source)}${p.moved ? ' · position set ' + esc(p.moved) : ''}</div>` : ''}</div>`}
-    <label>Name</label><input id="pl_name" value="${esc(p.name)}" autocomplete="off" placeholder="e.g. Pont Cyfyng lay-by">
-    <label>River / water</label><input id="pl_river" list="dl_riv" value="${esc(p.river)}" autocomplete="off">
-    <datalist id="dl_riv">${rivers().map(r => `<option value="${esc(r)}">`).join('')}</datalist>
-    <label>Gauge for this access point</label><input id="pl_gauge" value="${esc(p.gauge || '')}" autocomplete="off">
-    <h2>Position</h2>
-    <div class="btnrow"><button class="btn small" onclick="placeGPS()">${ICON.gps} Use my location</button>
-      <span class="muted" style="align-self:center">or tap the map</span></div>
-    <div class="mapbox tall" id="placeMap"></div>
-    <div class="grid2"><div><label>OS grid ref</label><input id="pl_grid" value="${esc(p.grid || '')}" onchange="placeGrid()"></div>
-      <div><label>what3words</label><input id="pl_w3w" value="${esc(p.w3w || '')}"></div></div>
-    <div class="muted" id="pl_pos">${p.lat != null ? p.lat.toFixed(5) + ', ' + p.lon.toFixed(5) : 'No position yet – tap the map'}</div>
-    <label>Access notes</label><textarea id="pl_notes" placeholder="Which bank, bridges or other features, access or ownership; then parking">${esc(p.notes || '')}</textarea>
-    <div class="btnrow" style="margin-top:18px"><button class="btn block" style="background:var(--green);color:#fff" onclick="savePlace()">Save access point</button></div>
-    ${isNew ? '' : `<div class="btnrow" style="margin-top:12px"><button class="btn ghost danger" onclick="deletePlace()">Delete access point</button></div>`}
-  </div>`;
+window.selectPoint = function (id) {
+  const p = byId(id); if (!p) return;
+  ED = { id: p.id, lat: p.lat, lon: p.lon, moved: false, how: '' };
+  editorHTML(p); refreshRiver();
+  if (p.lat != null && MAP) MAP.panTo([p.lat, p.lon]);
+  $('#rivMap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+window.addPoint = function () {
+  ED = { id: null, lat: null, lon: null, moved: false, how: '' };
+  editorHTML({ name: '', notes: '', gauge: '', grid: '', w3w: '' }); refreshRiver();
+  $('#rivMap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+function editorHTML(p) {
+  const isNew = !ED.id, d = p.lat != null ? 'https://www.google.com/maps/dir/?api=1&destination=' + p.lat + ',' + p.lon : '';
+  $('#editor').innerHTML = `<div class="editor">
+    <label>Name</label><input id="e_name" value="${esc(p.name)}" autocomplete="off" placeholder="e.g. Triple Falls lay-by">
+    <label>Access notes</label><textarea id="e_notes" placeholder="Which bank, bridges or other features, access; then parking">${esc(p.notes || '')}</textarea>
+    <div class="row2"><div><label>Gauge</label><input id="e_gauge" value="${esc(p.gauge || '')}" autocomplete="off"></div>
+      <div><label>OS grid ref</label><input id="e_grid" value="${esc(p.grid || '')}" autocomplete="off" onchange="gridTyped()"></div></div>
+    <label>what3words</label><input id="e_w3w" value="${esc(p.w3w || '')}" autocomplete="off">
+    <div class="pos" id="e_pos">${posText()}</div>
+    <div class="btns"><button class="btn small" onclick="useGPS()">${ICON.gps} Use my location</button>${d ? `<a class="btn small" href="${d}" target="_blank" rel="noopener">Directions</a>` : ''}</div>
+    <div class="btns"><button class="btn savebtn grow" onclick="savePoint()">Save</button><button class="btn ghost" onclick="closeEditor()">Cancel</button>
+      ${isNew ? '' : '<button class="btn ghost delbtn" onclick="deletePoint()">Delete</button>'}</div></div>`;
 }
-function afterPlace(id, newRiver) {
-  const p = id == null ? null : byId(id), el = $('#placeMap'); if (!el) return;
-  const map = makeMap(el);
-  // other access points on the same river, for reference
-  const river = p ? p.river : newRiver;
-  PTS.filter(x => x.river === river && (!p || x.id !== p.id) && x.lat != null)
-    .forEach(x => L.circleMarker([x.lat, x.lon], { radius: 6, color: '#fff', weight: 2, fillColor: '#C96A2B', fillOpacity: 1 }).addTo(map).bindTooltip(esc(x.name)));
-  if (p && p.lat != null) map.setView([p.lat, p.lon], 16);
-  else if (river) fitAll(map, PTS.filter(x => x.river === river));
-  else { const v = store('sa_view'); try { const o = JSON.parse(v); map.setView(o.c, o.z); } catch (e) { map.setView([54.5, -4], 6); } }
-  FORM.marker = p && p.lat != null ? L.marker([p.lat, p.lon], { icon: pin() }).addTo(map) : null;
-  map.on('click', ev => setPlacePos(ev.latlng.lat, ev.latlng.lng, 'Picked on map'));
+function posText() {
+  if (ED.lat == null) return '<b>Tap the map where the access point is.</b>';
+  return (ED.moved ? '<b>New position (not saved yet):</b> ' : 'Position: ') + ED.lat.toFixed(5) + ', ' + ED.lon.toFixed(5) + (ED.moved ? '' : ' · tap the map to move it');
 }
-function setPlacePos(lat, lon, how) {
-  FORM.lat = +lat.toFixed(6); FORM.lon = +lon.toFixed(6); FORM.moved = true; FORM.how = how;
-  const g = window.OSGrid && OSGrid.toGridRef(lat, lon); $('#pl_grid').value = g || '';
-  $('#pl_pos').textContent = how + ': ' + lat.toFixed(5) + ', ' + lon.toFixed(5) + ' (not saved yet)';
-  if (FORM.marker) FORM.marker.setLatLng([lat, lon]); else FORM.marker = L.marker([lat, lon], { icon: pin('new') }).addTo(MAP);
-  FORM.marker.setIcon(pin('new'));
+function setPos(lat, lon, how) {
+  ED.lat = +lat.toFixed(6); ED.lon = +lon.toFixed(6); ED.moved = true; ED.how = how;
+  const g = window.OSGrid && OSGrid.toGridRef(lat, lon); $('#e_grid').value = g || '';
+  $('#e_pos').innerHTML = posText(); drawPins();
 }
-window.placeGPS = function () {
+window.useGPS = function () {
   if (!navigator.geolocation) { toast('Location not available'); return; }
   toast('Finding you…');
-  navigator.geolocation.getCurrentPosition(p => { setPlacePos(p.coords.latitude, p.coords.longitude, 'From GPS'); MAP.setView([p.coords.latitude, p.coords.longitude], 16); },
-    err => toast(err.code === 1 ? 'Location permission is off for Safari' : 'Could not get a fix – tap the map instead'),
-    { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 });
+  navigator.geolocation.getCurrentPosition(p => { setPos(p.coords.latitude, p.coords.longitude, 'From GPS'); MAP.setView([p.coords.latitude, p.coords.longitude], 16); },
+    err => toast(err.code === 1 ? 'Location permission is off for this browser' : 'No fix – tap the map instead'), { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 });
 };
-window.placeGrid = function () {
-  const v = $('#pl_grid').value.trim(); if (!v) return;
+window.gridTyped = function () {
+  const v = $('#e_grid').value.trim(); if (!v) return;
   const ll = window.OSGrid && OSGrid.fromGridRef(v);
-  if (ll) { setPlacePos(ll[0], ll[1], 'From grid ref'); MAP.setView(ll, 15); } else toast('Grid ref not recognised');
+  if (ll) { setPos(ll[0], ll[1], 'From grid ref'); MAP.setView(ll, 15); } else toast('Grid ref not recognised');
 };
-window.savePlace = function () {
-  const name = $('#pl_name').value.trim(), river = $('#pl_river').value.trim();
-  if (!name) { toast('The access point needs a name'); return; }
-  if (!river) { toast('Which river or water is it on?'); return; }
-  if (PTS.some(x => x.name.toLowerCase() === name.toLowerCase() && x.id !== FORM.id)) { toast('There is already an access point called ' + name); return; }
-  if (FORM.isNew && !FORM.moved) { toast('Tap the map or use your location to set its position'); return; }
-  const fields = { name, river, gauge: $('#pl_gauge').value.trim(), grid: $('#pl_grid').value.trim(), w3w: $('#pl_w3w').value.trim(), notes: $('#pl_notes').value.trim() };
-  if (FORM.moved) { fields.lat = FORM.lat; fields.lon = FORM.lon; fields.position = FORM.how; }
-  // update the local copy straight away
-  let p = byId(FORM.id);
-  if (!p) { p = { id: FORM.id, source: 'Added in Suggested Access', visits: 0 }; PTS.push(p); }
-  Object.assign(p, { name, river, gauge: fields.gauge, grid: fields.grid, w3w: fields.w3w, notes: fields.notes });
-  if (FORM.moved) Object.assign(p, { lat: FORM.lat, lon: FORM.lon, position: FORM.how, moved: new Date().toISOString().slice(0, 10) });
-  saveLocal();
-  enqueue({ action: 'save', id: FORM.id, fields });
-  toast('Access point saved');
-  location.hash = '#river/' + enc(river);
+window.closeEditor = function () { ED = null; $('#editor').innerHTML = ''; refreshRiver(); };
+window.savePoint = function () {
+  const name = $('#e_name').value.trim();
+  if (!name) { toast('It needs a name'); return; }
+  if (PTS.some(p => p.name.toLowerCase() === name.toLowerCase() && p.id !== ED.id)) { toast('There is already an access point called ' + name); return; }
+  if (ED.lat == null) { toast('Tap the map to place it first'); return; }
+  const f = { name, river: RIVER, gauge: $('#e_gauge').value.trim(), grid: $('#e_grid').value.trim(), w3w: $('#e_w3w').value.trim(), notes: $('#e_notes').value.trim() };
+  let p = byId(ED.id), id = ED.id;
+  if (!p) {
+    id = 'N' + Date.now().toString(36);
+    const sib = onRiver(RIVER);
+    f.country = (sib[0] && sib[0].country) || (NEWRIVER && NEWRIVER.name === RIVER ? NEWRIVER.country : '') || '';
+    f.order = sib.length + 1;
+    p = { id, source: 'Added in Access Points', visits: 0, country: f.country, order: f.order }; PTS.push(p);
+  }
+  if (ED.moved || !ED.id) { f.lat = ED.lat; f.lon = ED.lon; f.position = ED.how || 'Picked on map'; Object.assign(p, { lat: f.lat, lon: f.lon, position: f.position, moved: new Date().toISOString().slice(0, 10) }); }
+  Object.assign(p, { name, river: RIVER, gauge: f.gauge, grid: f.grid, w3w: f.w3w, notes: f.notes });
+  saveLocal(); enqueue({ action: 'save', id, fields: f });
+  ED = null; $('#editor').innerHTML = ''; refreshRiver(); toast('Saved');
 };
-window.deletePlace = function () {
-  const p = byId(FORM.id); if (!p) return;
-  if (!confirm('Delete "' + p.name + '"? This removes it from the Suggested Access tab.')) return;
-  PTS = PTS.filter(x => x.id !== p.id); saveLocal();
-  enqueue({ action: 'delete', id: p.id });
-  toast('Deleted');
-  location.hash = PTS.some(x => x.river === p.river) ? '#river/' + enc(p.river) : '#rivers';
+window.deletePoint = function () {
+  const p = byId(ED.id); if (!p) return;
+  if (!confirm('Delete "' + p.name + '" completely?')) return;
+  PTS = PTS.filter(x => x.id !== p.id);
+  renumber(); saveLocal(); enqueue({ action: 'delete', id: p.id });
+  ED = null; $('#editor').innerHTML = ''; refreshRiver(); toast('Deleted');
+  if (!onRiver(RIVER).length) location.hash = '#rivers';
 };
-window.sharePlace = async function (id) {
-  const p = byId(id); if (!p) return;
-  const link = p.lat != null ? 'https://www.google.com/maps/search/?api=1&query=' + p.lat + ',' + p.lon : p.w3w ? w3wLink(p.w3w) : '';
-  const text = [p.name, link].filter(Boolean).join('\n');
-  if (navigator.share) { try { await navigator.share({ title: p.name, text }); } catch (e) {} return; }
-  try { await navigator.clipboard.writeText(text); toast('Copied – paste it into a message'); } catch (e) { toast(text, 5000); }
+function renumber() { const ps = onRiver(RIVER); ps.forEach((p, i) => p.order = i + 1); return ps; }
+window.shift = function (id, d) {
+  const ps = onRiver(RIVER), i = ps.findIndex(p => p.id === id), j = i + d;
+  if (i < 0 || j < 0 || j >= ps.length) return;
+  [ps[i], ps[j]] = [ps[j], ps[i]]; ps.forEach((p, k) => p.order = k + 1);
+  saveLocal(); enqueue({ action: 'order', orders: ps.map(p => [p.id, p.order]) }); refreshRiver();
 };
 
+// ---- settings
 function screenSettings() {
-  return topbar('Settings') + `<div class="wrap form">
-    <p class="muted">The web app address for Suggested Access and your Water Log App key (Settings tab of the Canoe Log Book). Both stay on this phone only.</p>
+  return topbar('Settings', '#rivers') + `<div class="wrap"><div class="editor">
+    <p class="hint">The web app address for Access Points and your Water Log App key (Settings tab of the Canoe Log Book). Both stay on this device only.</p>
     <label>Web app address</label><input id="cfgUrl" value="${esc(cfg.url)}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="url">
     <label>App key</label><input id="cfgKey" type="password" value="${esc(cfg.key)}" autocomplete="off">
-    <div class="btnrow" style="margin-top:18px"><button class="btn block" style="background:var(--green);color:#fff" onclick="saveCfg()">Save and connect</button></div></div>`;
+    <div class="btns"><button class="btn savebtn grow" onclick="saveCfg()">Save and connect</button></div></div></div>`;
 }
 window.saveCfg = function () {
   const m = /macros\/s\/([\w-]+)/.exec($('#cfgUrl').value.trim());
   if (!m) { toast('That doesn\'t look like a web app address ending /exec'); return; }
   cfg.url = 'https://script.google.com/macros/s/' + m[1] + '/exec'; cfg.key = $('#cfgKey').value.trim();
   store('sa_url', cfg.url); store('sa_key', cfg.key);
-  toast('Connecting…'); location.hash = '#map'; load();
+  toast('Connecting…'); location.hash = '#rivers'; load();
 };
 
-/* ================= router ================= */
-function nav(cur) {
-  const a = (h, ic, t, on, cls) => `<a href="${h}" class="${on ? 'on' : ''} ${cls || ''}">${cls === 'add' ? `<span class="plus">${ic}</span>` : ic}${cls === 'add' ? '' : `<span>${t}</span>`}</a>`;
-  $('#nav').innerHTML = a('#map', ICON.map, 'Map', cur === 'map') + a('#rivers', ICON.wave, 'Rivers', cur === 'rivers' || cur === 'river') +
-    a('#new', ICON.plus, 'Add', false, 'add') + a('#settings', ICON.cog, 'Settings', cur === 'settings');
-}
+/* ============ router ============ */
 function render() {
-  const h = decodeURIComponent(location.hash.slice(1) || 'map'), [s, ...rest] = h.split('/'), arg = rest.join('/');
-  if (MAP) { MAP.remove(); MAP = null; }
-  let html;
-  if (s === 'rivers') html = screenRivers();
-  else if (s === 'river') html = screenRiver(arg);
-  else if (s === 'place') html = screenPlace(arg);
-  else if (s === 'new') html = screenPlace(null, arg);
-  else if (s === 'settings') html = screenSettings();
-  else html = screenMap();
-  $('#app').innerHTML = html; nav(s);
-  if (s === 'river') afterRiver(arg);
-  else if (s === 'place') afterPlace(arg);
-  else if (s === 'new') afterPlace(null, arg);
-  else if (s !== 'rivers' && s !== 'settings') afterMap();
+  const h = decodeURIComponent(location.hash.slice(1) || 'rivers'), i = h.indexOf('/'), s = i < 0 ? h : h.slice(0, i), arg = i < 0 ? '' : h.slice(i + 1);
+  if (MAP) { MAP.remove(); MAP = null; LAYER = null; }
+  ED = null;
+  if (s === 'river') { $('#app').innerHTML = screenRiver(arg); afterRiver(arg); }
+  else if (s === 'newriver') $('#app').innerHTML = screenNewRiver();
+  else if (s === 'settings') $('#app').innerHTML = screenSettings();
+  else { $('#app').innerHTML = screenRivers(); afterRivers(); }
   window.scrollTo(0, 0);
 }
-// re-rendering while typing on a form would lose the entry, so refreshes only redraw the list screens
-const _render = render;
-render = function () { const s = location.hash.slice(1).split('/')[0]; if ((s === 'place' || s === 'new' || s === 'settings') && $('#pl_name, #cfgUrl')) return; _render(); };
-window.addEventListener('hashchange', _render);
-_render();
+window.addEventListener('hashchange', render);
+render();
 if (cfg.url && cfg.key) load(); else location.hash = '#settings';
 </script>
 </body>
